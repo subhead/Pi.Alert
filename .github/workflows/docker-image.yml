@@ -37,4 +37,4 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           tags: |
-              ${{ env.DOCKERHUB_SLUG }}/Pi.Alert:latest
+              ${{ env.DOCKERHUB_SLUG }}/pi.alert:latest
