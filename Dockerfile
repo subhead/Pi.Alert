@@ -40,7 +40,3 @@ echo '      ))'; \
 echo ')'; \
 } > /etc/lighttpd/mod_fastcgi_fpm.conf
 
-# Expose the below port
-EXPOSE 20211
-
-CMD /usr/sbin/lighttpd -f /etc/lighttpd/lighttpd.conf & /usr/sbin/php-fpm7 & crond -n
