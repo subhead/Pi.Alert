@@ -19,12 +19,12 @@ RUN apk add --no-cache cronie lighttpd php php-cgi php-fpm php-sqlite3 php-json 
     && sed -i -r 's#.*include "mod_cgi.conf".*#   include "mod_cgi.conf"#g' /etc/lighttpd/lighttpd.conf \
     && sed -i -r 's#.*include "mod_fastcgi.conf".*#\#   include "mod_fastcgi.conf"#g' /etc/lighttpd/lighttpd.conf \
     && sed -i -r 's#.*include "mod_fastcgi_fpm.conf".*#   include "mod_fastcgi_fpm.conf"#g' /etc/lighttpd/lighttpd.conf \
-    && sed -i -r 's|^.*listen =.*|listen = /var/run/php-fpm7/php7-fpm.sock|g' /etc/php*/php-fpm.d/www.conf \
+    && sed -i -r 's|^.*listen =.*|listen = /var/run/php-fpm8/php7-fpm.sock|g' /etc/php*/php-fpm.d/www.conf \
     && sed -i -r 's|^.*listen.owner = .*|listen.owner = lighttpd|g' /etc/php*/php-fpm.d/www.conf \
     && sed -i -r 's|^.*listen.group = .*|listen.group = lighttpd|g' /etc/php*/php-fpm.d/www.conf \
     && sed -i -r 's|^.*listen.mode = .*|listen.mode = 0660|g' /etc/php*/php-fpm.d/www.conf \
     && sed -i -r 's|^server.document-root.*$|server.document-root = var.basedir|g' /etc/lighttpd/lighttpd.conf \
-    && mkdir -p mkdir /var/run/php-fpm7 \
+    && mkdir -p mkdir /var/run/php-fpm8 \
     && mkdir /usr/share/ieee-data \
 RUN { \
 echo 'server.modules += ( "mod_fastcgi" )'; \
@@ -32,7 +32,7 @@ echo 'index-file.names += ( "index.php" )'; \
 echo 'fastcgi.server = ('; \
 echo '    ".php" => ('; \
 echo '      "localhost" => ('; \
-echo '        "socket"                => "/var/run/php-fpm7/php7-fpm.sock",'; \
+echo '        "socket"                => "/var/run/php-fpm8/php7-fpm.sock",'; \
 echo '        "broken-scriptfilename" => "enable"'; \
 echo '      ))'; \
 echo ')'; \
@@ -41,4 +41,4 @@ echo ')'; \
 # Expose the below port
 EXPOSE 20211
 
-CMD /usr/sbin/lighttpd -f /etc/lighttpd/lighttpd.conf & /usr/sbin/php-fpm7 & crond -n
+CMD /usr/sbin/lighttpd -f /etc/lighttpd/lighttpd.conf & /usr/sbin/php-fpm8 & crond -n
