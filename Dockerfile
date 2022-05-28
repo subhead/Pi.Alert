@@ -5,7 +5,7 @@ LABEL org.opencontainers.image.source="https://github.com/gatesry/Pi.Alert"
 COPY . /pialert
 
 RUN apk add --no-cache cronie lighttpd php php-cgi php-fpm php-sqlite3 php-json sqlite python3 curl perl perl-lwp-useragent-determined bind-tools nmap \
-    && apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/testing arp-scan \
+    && apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/community arp-scan \
     && chown -R nobody:nobody /pialert/db \
     && sed -i 's/var\/www\/localhost/pialert\/front/g' /etc/lighttpd/lighttpd.conf \
     && sed -i 's/^.*server.port.*$/server.port = 20211/g' /etc/lighttpd/lighttpd.conf \
@@ -40,3 +40,7 @@ echo '      ))'; \
 echo ')'; \
 } > /etc/lighttpd/mod_fastcgi_fpm.conf
 
+# Expose the below port
+EXPOSE 20211
+
+CMD /usr/sbin/lighttpd -f /etc/lighttpd/lighttpd.conf & /usr/sbin/php-fpm7 & crond -n
