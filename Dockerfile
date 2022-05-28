@@ -26,8 +26,6 @@ RUN apk add --no-cache cronie lighttpd php php-cgi php-fpm php-sqlite3 php-json 
     && sed -i -r 's|^server.document-root.*$|server.document-root = var.basedir|g' /etc/lighttpd/lighttpd.conf \
     && mkdir -p mkdir /var/run/php-fpm7 \
     && mkdir /usr/share/ieee-data \
-
-
 RUN { \
 echo 'server.modules += ( "mod_fastcgi" )'; \
 echo 'index-file.names += ( "index.php" )'; \
@@ -38,7 +36,7 @@ echo '        "socket"                => "/var/run/php-fpm7/php7-fpm.sock",'; \
 echo '        "broken-scriptfilename" => "enable"'; \
 echo '      ))'; \
 echo ')'; \
-} > /etc/lighttpd/mod_fastcgi_fpm.conf
+> /etc/lighttpd/mod_fastcgi_fpm.conf
 
 # Expose the below port
 EXPOSE 20211
