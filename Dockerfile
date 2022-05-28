@@ -26,7 +26,7 @@ RUN apk add --no-cache cronie lighttpd php php-cgi php-fpm php-sqlite3 php-json 
     && sed -i -r 's|^server.document-root.*$|server.document-root = var.basedir|g' /etc/lighttpd/lighttpd.conf \
     && mkdir -p mkdir /var/run/php-fpm7 \
     && mkdir /usr/share/ieee-data \
-    && python3 /pialert/back/pialert.py update_vendors
+
 
 RUN { \
 echo 'server.modules += ( "mod_fastcgi" )'; \
