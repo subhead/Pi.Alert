@@ -6,6 +6,7 @@
 #  pialert_install.sh - Installation script
 # ------------------------------------------------------------------------------
 #  Puche 2021        pi.alert.application@gmail.com        GNU GPLv3
+#  leiweibau 2024+                                          GNU GPLv3
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
@@ -13,42 +14,27 @@
 # ------------------------------------------------------------------------------
   COLS=70
   ROWS=12
-  
+
   INSTALL_DIR=~
   PIALERT_HOME="$INSTALL_DIR/pialert"
-  
+
   LIGHTTPD_CONF_DIR="/etc/lighttpd"
   WEBROOT="/var/www/html"
   PIALERT_DEFAULT_PAGE=false
-  
+
   LOG="pialert_install_`date +"%Y-%m-%d_%H-%M"`.log"
-  
+
   # MAIN_IP=`ip -o route get 1 | sed -n 's/.*src \([0-9.]\+\).*/\1/p'`
   MAIN_IP=`ip -o route get 1 | sed 's/^.*src \([^ ]*\).*$/\1/;q'`
-  
-  PIHOLE_INSTALL=false
-  PIHOLE_ACTIVE=false
-  DHCP_ACTIVATE=false
-  DHCP_ACTIVE=false
-  
-  DHCP_RANGE_START="192.168.1.200"
-  DHCP_RANGE_END="192.168.1.251"
-  DHCP_ROUTER="192.168.1.1"
-  DHCP_LEASE="1"
-  DHCP_DOMAIN="local"
-  
+
+  PIHOLESIX_CHECK=false
+  PIHOLESIX_CONFIG=false
+
   USE_PYTHON_VERSION=0
   PYTHON_BIN=python
 
   FIRST_SCAN_KNOWN=true
-  
-  REPORT_MAIL=False
-  REPORT_TO=user@gmail.com
-  SMTP_SERVER=smtp.gmail.com
-  SMTP_PORT=587
-  SMTP_USER=user@gmail.com
-  SMTP_PASS=password
-  
+
   DDNS_ACTIVE=False
   DDNS_DOMAIN='your_domain.freeddns.org'
   DDNS_USER='dynu_user'
@@ -63,15 +49,14 @@ main() {
   print_superheader "Pi.Alert Installation"
   log "`date`"
   log "Logfile: $LOG"
+  install_dependencies
 
+  check_pihole
   check_pialert_home
   ask_config
 
   set -e
 
-  install_pihole
-  activate_DHCP
-  add_pialert_DNS
   install_lighttpd
   install_arpscan
   install_python
@@ -86,6 +71,28 @@ main() {
   move_logfile
 }
 
+# ------------------------------------------------------------------------------
+# Check Pihole
+# ------------------------------------------------------------------------------
+
+check_pihole() {
+
+    if systemctl is-active --quiet pihole-FTL; then
+        # Pi-hole Version abrufen
+        VERSION_OUTPUT=$(sudo pihole -v)
+
+        # Extrahiere die Hauptversionsnummer
+        CORE_VERSION=$(echo "$VERSION_OUTPUT" | grep -oP 'Core version is v\K[0-9]+')
+
+        if [[ $CORE_VERSION -ge 6 ]]; then
+            PIHOLESIX_CHECK=true
+        else
+            PIHOLESIX_CHECK=false
+        fi
+    else
+        PIHOLESIX_CHECK=false
+    fi
+}
 
 # ------------------------------------------------------------------------------
 # Ask config questions
@@ -98,54 +105,15 @@ ask_config() {
     exit 1
   fi
 
-  # Ask Pi-hole Installation
-  PIHOLE_ACTIVE=false
-  if [ -e /usr/local/bin/pihole ] || [ -e /etc/pihole ]; then
-    PIHOLE_ACTIVE=true
-  fi
-
-  PIHOLE_INSTALL=false
-  if $PIHOLE_ACTIVE ; then
-    msgbox "Pi-hole is already installed in this system." \
-           "Perfect: Pi-hole Installation is not necessary"
-  else
-    ask_yesno "Pi-hole is not installed." \
-              "Do you want to install Pi-hole before installing Pi.Alert ?" "YES"
+  # Ask Pihole detection
+  if $PIHOLESIX_CHECK; then
+    ask_yesno "A Pi-hole 6 installation was detected." \
+              "The Pi-hole web interface is changed to port 8080 to avoid conflicts with this installation. If you select NO, the Pi.Alert installation will be aborted." "YES"
     if $ANSWER ; then
-      PIHOLE_INSTALL=true
-      msgbox "In the installation wizard of Pi-hole, select this options" \
-             "'Install web admin interface' & 'Install web server lighttpd'"
+      PIHOLESIX_CONFIG=true
+    else
+      exit 1
     fi
-  fi
-
-  # Ask DHCP Activation
-  DHCP_ACTIVE=false
-  DHCP_ACTIVATE=false
-  if $PIHOLE_ACTIVE ; then
-    DHCP_ACTIVE=`sudo grep DHCP_ACTIVE /etc/pihole/setupVars.conf | awk -F= '/./{print $2}'`
-    if [ "$DHCP_ACTIVE" = "" ] ; then DHCP_ACTIVE=false; fi
- 
-    if ! $DHCP_ACTIVE ; then
-      ask_yesno "Pi-hole DHCP server is not active." \
-                "Do you want to activate Pi-hole DHCP server ?"
-      if $ANSWER ; then
-        DHCP_ACTIVATE=true
-      fi
-    fi
-
-  elif $PIHOLE_INSTALL ; then
-    ask_yesno "Pi-hole installation." \
-              "Do you want to activate Pi-hole DHCP server ?"
-    if $ANSWER ; then
-      DHCP_ACTIVATE=true
-    fi
-  fi
-
-  if $DHCP_ACTIVATE ; then
-    msgbox "Default DHCP options will be used. Range=$DHCP_RANGE_START - $DHCP_RANGE_END / Router=$DHCP_ROUTER / Domain=$DHCP_DOMAIN / Leases=$DHCP_LEASE h." \
-           "Yo can change this values in your Pi-hole Admin Portal"
-    msgbox "Make sure your router's DHCP server is disabled" \
-           "when using the Pi-hole DHCP server!"
   fi
 
   # Ask Pi.Alert deafault page
@@ -157,13 +125,12 @@ ask_config() {
       PIALERT_DEFAULT_PAGE=true
     fi
   fi
-  
+
   # Ask Python version
-  ask_option "What Python version do you want to use ?" \
-              3 \
-              0 " - Use Python already installed in the system (DEFAULT)" \
-              2 " - Use Python 2" \
-              3 " - Use Python 3"
+  ask_option "Is Python 3 already installed in the system ?" \
+              2 \
+              0 " - Yes it is (DEFAULT)" \
+              3 " - Install Python 3"
   if [ "$ANSWER" = "" ] ; then
     USE_PYTHON_VERSION=0
   else
@@ -174,30 +141,6 @@ ask_config() {
   ask_yesno "First Scan options" \
             "Do you want to mark the new devices as known devices during the first scan?" "YES"
   FIRST_SCAN_KNOWN=$ANSWER
-
-  # Ask e-mail notification config
-  MAIL_REPORT=false
-  ask_yesno "Pi.Alert can notify you by e-mail when a network event occurs" \
-            "Do you want to activate this feature ?"
-  if $ANSWER ; then
-    ask_yesno "e-mail notification needs a SMTP server (i.e. smtp.gmail.com)" \
-              "Do you want to continue activating this feature ?"
-    MAIL_REPORT=$ANSWER
-  fi
-
-  if $MAIL_REPORT ; then
-    ask_input "" "Notify alert to this e-mail address:" "user@gmail.com"
-    REPORT_TO=$ANSWER
-
-    ask_input "" "SMTP server:" "smtp.gmail.com"
-    SMTP_SERVER=$ANSWER
-
-    ask_input "" "SMTP user:" "user@gmail.com"
-    SMTP_USER=$ANSWER
-
-    ask_input "" "SMTP password:" "password"
-    SMTP_PASS=$ANSWER
-  fi
 
   # Ask Dynamic DNS config
   DDNS_ACTIVE=false
@@ -230,96 +173,28 @@ ask_config() {
   msgbox "" "The installation will start now"
 }
 
-
-# ------------------------------------------------------------------------------
-# Install Pi-hole
-# ------------------------------------------------------------------------------
-install_pihole() {
-  print_header "Pi-hole"
-
-  if ! $PIHOLE_INSTALL ; then
-    return
-  fi
-
-  print_msg "- Checking if Pi-hole is installed..."
-  if [ -e /usr/local/bin/pihole ] || [ -e /etc/pihole ]; then
-    print_msg "  - Pi-hole already installed"
-    print_msg "`pihole -v 2>&1`"
-    print_msg ""
-
-    PIHOLE_ACTIVE=true
-    return
-  fi
-
-  print_msg "- Installing Pi-hole..."
-  print_msg "  - Pi-hole has its own logfile"
-  curl -sSL https://install.pi-hole.net | bash
-  print_msg ""
-  PIHOLE_ACTIVE=true
-}
-
-
-# ------------------------------------------------------------------------------
-# Activate DHCP
-# ------------------------------------------------------------------------------
-activate_DHCP() {
-  if ! $DHCP_ACTIVATE ; then
-    return
-  fi
-
-  if ! $PIHOLE_ACTIVE ; then
-    return
-  fi
-
-  print_msg "- Checking if DHCP is active..."
-  if [ -e /etc/pihole ]; then
-    DHCP_ACTIVE= `grep DHCP_ACTIVE /etc/pihole/setupVars.conf | awk -F= '/./{print $2}'`
-  fi
-
-  if $DHCP_ACTIVE ; then
-    print_msg "  - DHCP already active"
-  fi
-
-  print_msg "- Activating DHCP..."
-  sudo pihole -a enabledhcp "$DHCP_RANGE_START" "$DHCP_RANGE_END" "$DHCP_ROUTER" "$DHCP_LEASE" "$DHCP_DOMAIN"   2>&1 >> "$LOG"
-  DHCP_ACTIVE=true
-}
-
-
-# ------------------------------------------------------------------------------
-# Add Pi.Alert DNS
-# ------------------------------------------------------------------------------
-add_pialert_DNS() {
-  if ! $PIHOLE_ACTIVE ; then
-    return
-  fi
-
-  print_msg "- Checking if 'pi.alert' is configured in Local DNS..."
-  if grep -Fq pi.alert /etc/pihole/custom.list; then
-    print_msg "  - 'pi.alert' already in Local DNS..."
-    return
-  fi
-
-  print_msg "- Adding 'pi.alert' to Local DNS..."
-  sudo sh -c "echo $MAIN_IP pi.alert >> /etc/pihole/custom.list"  2>&1 >> "$LOG"
-  sudo pihole restartdns                                          2>&1 >> "$LOG"
-}
-
-
 # ------------------------------------------------------------------------------
 # Install Lighttpd & PHP
 # ------------------------------------------------------------------------------
 install_lighttpd() {
+
+  if $PIHOLESIX_CONFIG ; then
+    echo "Pi-hole detected. Webinterface moved to Port 8080..."
+    sudo pihole-FTL --config webserver.port 8080o,443so,[::]:8080o,[::]:443so
+    sudo systemctl restart pihole-FTL
+    echo "Pi-hole Configuration applied"
+  fi
+
   print_header "Lighttpd & PHP"
 
   print_msg "- Installing apt-utils..."
-  sudo apt-get install apt-utils -y                               2>&1 >> "$LOG"
+  sudo apt-get install apt-utils -y                                         2>&1 >> "$LOG"
 
   print_msg "- Installing lighttpd..."
-  sudo apt-get install lighttpd -y                                2>&1 >> "$LOG"
+  sudo apt-get install lighttpd -y                                          2>&1 >> "$LOG"
   
   print_msg "- Installing PHP..."
-  sudo apt-get install php php-cgi php-fpm php-sqlite3 -y         2>&1 >> "$LOG"
+  sudo apt-get install php php-cgi php-fpm php-curl php-sqlite3 php-xml -y          2>&1 >> "$LOG"
 
   print_msg "- Activating PHP..."
   ERRNO=0
@@ -330,31 +205,39 @@ install_lighttpd() {
   fi
   
   print_msg "- Restarting lighttpd..."
-  sudo service lighttpd restart                                   2>&1 >> "$LOG"
+  sudo service lighttpd restart                                             2>&1 >> "$LOG"
   # sudo /etc/init.d/lighttpd restart                             2>&1 >> "$LOG"
 
   print_msg "- Installing sqlite3..."
-  sudo apt-get install sqlite3 -y                                 2>&1 >> "$LOG"
-}
+  sudo apt-get install sqlite3 -y                                           2>&1 >> "$LOG"
 
+  print_msg "- Installing mmdblookup"
+  sudo apt-get install mmdb-bin -y                                          2>&1 >> "$LOG"
+}
 
 # ------------------------------------------------------------------------------
 # Install arp-scan & dnsutils
 # ------------------------------------------------------------------------------
 install_arpscan() {
-  print_header "arp-scan & dnsutils"
+  print_header "arp-scan, dnsutils and nmap"
 
   print_msg "- Installing arp-scan..."
-  sudo apt-get install arp-scan -y                                2>&1 >> "$LOG"
+  sudo apt-get install arp-scan -y                                          2>&1 >> "$LOG"
+  sudo mkdir -p /usr/share/ieee-data                                        2>&1 >> "$LOG"
 
   print_msg "- Testing arp-scan..."
-  sudo arp-scan -l | head -n -3 | tail +3                        | tee -a "$LOG"
+  sudo arp-scan -l | head -n -3 | tail +3 | tee -a "$LOG"
 
   print_msg "- Installing dnsutils & net-tools..."
-  sudo apt-get install dnsutils net-tools -y                      2>&1 >> "$LOG"
+  sudo apt-get install dnsutils curl net-tools libwww-perl libtext-csv-perl -y   2>&1 >> "$LOG"
+
+  print_msg "- Installation of tools for hostname detection..."
+  sudo apt-get install avahi-utils nbtscan -y                               2>&1 >> "$LOG"
+
+  print_msg "- Installing nmap, zip, aria2 and wakeonlan"
+  sudo apt-get install nmap zip wakeonlan aria2 -y                          2>&1 >> "$LOG"
 }
   
-
 # ------------------------------------------------------------------------------
 # Install Python
 # ------------------------------------------------------------------------------
@@ -369,8 +252,9 @@ install_python() {
       print_msg "  - Python 3 is available"
       USE_PYTHON_VERSION=3
     elif $PYTHON2 ; then
-      print_msg "  - Python 2 is available"
-      USE_PYTHON_VERSION=2
+      print_msg "  - Python 2 is available but no longer compatible with Pi.Alert"
+      print_msg "    - Python 3 will be installed"
+      USE_PYTHON_VERSION=3
     else
       print_msg "  - Python is not available in this system"
       print_msg "    - Python 3 will be installed"
@@ -379,27 +263,34 @@ install_python() {
     echo ""
   fi
 
-  if [ $USE_PYTHON_VERSION -eq 2 ] ; then
-    if $PYTHON2 ; then
-      print_msg "- Using Python 2"
-    else
-      print_msg "- Installing Python 2..."
-      sudo apt-get install python -y                              2>&1 >> "$LOG"
-    fi
-    PYTHON_BIN="python"
-  elif [ $USE_PYTHON_VERSION -eq 3 ] ; then
+  if [ $USE_PYTHON_VERSION -eq 3 ] ; then
     if $PYTHON3 ; then
       print_msg "- Using Python 3"
+      sudo apt-get install python3-pip python3-cryptography python3-requests python3-tz python3-tzlocal python3-aiohttp -y                 2>&1 >> "$LOG"
     else
       print_msg "- Installing Python 3..."
-      sudo apt-get install python3 -y                             2>&1 >> "$LOG"
+      sudo apt-get install python3 python3-pip python3-cryptography python3-requests python3-tz python3-tzlocal python3-aiohttp -y         2>&1 >> "$LOG"
     fi
+    print_msg "    - Install additional packages"
+    if [ -f /usr/lib/python3.*/EXTERNALLY-MANAGED ]; then
+      pip3 -q install mac-vendor-lookup --break-system-packages --no-warn-script-location       2>&1 >> "$LOG"
+      pip3 -q install fritzconnection --break-system-packages --no-warn-script-location         2>&1 >> "$LOG"
+      pip3 -q install routeros_api --break-system-packages --no-warn-script-location            2>&1 >> "$LOG"
+      pip3 -q install pyunifi --break-system-packages --no-warn-script-location                 2>&1 >> "$LOG"
+      pip3 -q install openwrt-luci-rpc --break-system-packages --no-warn-script-location        2>&1 >> "$LOG"
+    else
+      pip3 -q install mac-vendor-lookup  --no-warn-script-location                              2>&1 >> "$LOG"
+      pip3 -q install fritzconnection --no-warn-script-location                                 2>&1 >> "$LOG"
+      pip3 -q install routeros_api --no-warn-script-location                                    2>&1 >> "$LOG"
+      pip3 -q install pyunifi --no-warn-script-location                                         2>&1 >> "$LOG"
+      pip3 -q install openwrt-luci-rpc --no-warn-script-location                                2>&1 >> "$LOG"
+    fi
+
     PYTHON_BIN="python3"
   else
     process_error "Unknown Python version to use: $USE_PYTHON_VERSION"
   fi
 }
-
 
 # ------------------------------------------------------------------------------
 # Check Python versions available
@@ -428,7 +319,6 @@ check_python_versions() {
   echo ""
 }
 
-
 # ------------------------------------------------------------------------------
 # Install Pi.Alert
 # ------------------------------------------------------------------------------
@@ -443,7 +333,6 @@ install_pialert() {
   set_pialert_default_page
 }
 
-
 # ------------------------------------------------------------------------------
 # Download and uncompress Pi.Alert
 # ------------------------------------------------------------------------------
@@ -454,43 +343,47 @@ download_pialert() {
   fi
   
   print_msg "- Downloading installation tar file..."
-  curl -Lo "$INSTALL_DIR/pialert_latest.tar" https://github.com/pucherot/Pi.Alert/raw/main/tar/pialert_latest.tar
+  URL="https://github.com/leiweibau/Pi.Alert/raw/main/tar/pialert_latest.tar"
+  # Testing
+  # ----------------------------------
+  #URL=""
+  wget -q --show-progress -O "$INSTALL_DIR/pialert_latest.tar" "$URL"
   echo ""
 
   print_msg "- Uncompressing tar file"
-  tar xf "$INSTALL_DIR/pialert_latest.tar" -C "$INSTALL_DIR" --checkpoint=100 --checkpoint-action="ttyout=."  2>&1 >> "$LOG"
+  tar xf "$INSTALL_DIR/pialert_latest.tar" -C "$INSTALL_DIR" --checkpoint=100 --checkpoint-action="ttyout=."        2>&1 >> "$LOG"
   echo ""
 
   print_msg "- Deleting downloaded tar file..."
-  rm -r "$INSTALL_DIR/pialert_latest.tar"
-}
+  rm -r "$INSTALL_DIR/pialert_latest.tar"                                                                           2>&1 >> "$LOG"
 
+  print_msg "- Generate autocomplete file..."
+  PIALERT_CLI_PATH=$(dirname $PIALERT_HOME)
+  sed -i "s|<YOUR_PIALERT_PATH>|$PIALERT_CLI_PATH/pialert|" $PIALERT_HOME/install/pialert-cli.autocomplete
+
+  print_msg "- Copy autocomplete file..."
+  if [ -d "/etc/bash_completion.d" ] ; then
+      sudo cp $PIALERT_HOME/install/pialert-cli.autocomplete /etc/bash_completion.d/pialert-cli                     2>&1 >> "$LOG"
+  elif [ -d "/usr/share/bash-completion/completions" ] ; then
+      sudo cp $PIALERT_HOME/install/pialert-cli.autocomplete /usr/share/bash-completion/completions/pialert-cli     2>&1 >> "$LOG"
+  fi
+
+}
 
 # ------------------------------------------------------------------------------
 # Configure Pi.Alert parameters
 # ------------------------------------------------------------------------------
 configure_pialert() {
-  print_msg "- Settting Pi.Alert config file"
+  print_msg "- Setting Pi.Alert config file"
 
   set_pialert_parameter PIALERT_PATH    "'$PIALERT_HOME'"
   
-  set_pialert_parameter REPORT_MAIL     "$REPORT_MAIL"
-  set_pialert_parameter REPORT_TO       "'$REPORT_TO'"
-  set_pialert_parameter SMTP_SERVER     "'$SMTP_SERVER'"
-  set_pialert_parameter SMTP_PORT       "$SMTP_PORT"
-  set_pialert_parameter SMTP_USER       "'$SMTP_USER'"
-  set_pialert_parameter SMTP_PASS       "'$SMTP_PASS'"
-
   set_pialert_parameter DDNS_ACTIVE     "$DDNS_ACTIVE"
   set_pialert_parameter DDNS_DOMAIN     "'$DDNS_DOMAIN'"
   set_pialert_parameter DDNS_USER       "'$DDNS_USER'"
   set_pialert_parameter DDNS_PASSWORD   "'$DDNS_PASSWORD'"
   set_pialert_parameter DDNS_UPDATE_URL "'$DDNS_UPDATE_URL'"
-
-  set_pialert_parameter PIHOLE_ACTIVE   "$PIHOLE_ACTIVE"
-  set_pialert_parameter DHCP_ACTIVE     "$DHCP_ACTIVE"
 }
-
 
 # ------------------------------------------------------------------------------
 # Set Pi.Alert parameter
@@ -504,15 +397,19 @@ set_pialert_parameter() {
     VALUE="$2"
   fi
   
-  sed -i "/^$1.*=/s|=.*|= $VALUE|" $PIALERT_HOME/config/pialert.conf  2>&1 >> "$LOG"
+  sed -i "/^$1.*=/s|=.*|= $VALUE|" $PIALERT_HOME/config/pialert.conf                             2>&1 >> "$LOG"
 }
-
 
 # ------------------------------------------------------------------------------
 # Test Pi.Alert
 # ------------------------------------------------------------------------------
 test_pialert() {
   print_msg "- Testing Pi.Alert HW vendors database update process..."
+  print_msg "- Prepare directories..."
+  if [ ! -e /var/lib/ieee-data ]; then
+    sudo ln -s /usr/share/ieee-data/ /var/lib/ieee-data                                          2>&1 >> "$LOG"
+  fi
+
   print_msg "*** PLEASE WAIT A COUPLE OF MINUTES..."
   stdbuf -i0 -o0 -e0  $PYTHON_BIN $PIALERT_HOME/back/pialert.py update_vendors_silent            2>&1 | tee -ai "$LOG"
 
@@ -524,6 +421,14 @@ test_pialert() {
   print_msg "- Testing Pi.Alert Network scan..."
   print_msg "*** PLEASE WAIT A COUPLE OF MINUTES..."
   stdbuf -i0 -o0 -e0  $PYTHON_BIN $PIALERT_HOME/back/pialert.py 1                                2>&1 | tee -ai "$LOG"
+
+  echo ""
+  print_msg "- Enable optional Speedtest..."
+  chmod +x $PIALERT_HOME/back/speedtest-cli                                                      2>&1 | tee -ai "$LOG"
+
+  echo ""
+  print_msg "- Enable optional pialert-cli..."
+  chmod +x $PIALERT_HOME/back/pialert-cli                                                        2>&1 | tee -ai "$LOG"
 
   if $FIRST_SCAN_KNOWN ; then
     echo ""
@@ -538,14 +443,14 @@ test_pialert() {
 add_jobs_to_crontab() {
   if crontab -l 2>/dev/null | grep -Fq pialert ; then
     print_msg "- Pi.Alert crontab jobs already exists. This is your crontab:"
-    crontab -l | grep -F pialert                           2>&1 | tee -ai "$LOG"
+    crontab -l | grep -F pialert                                                                 2>&1 | tee -ai "$LOG"
     return    
   fi
 
   print_msg "- Adding jobs to the crontab..."
-  if [ $USE_PYTHON_VERSION -eq 3 ] ; then
-    sed -i "s/\<python\>/$PYTHON_BIN/g" $PIALERT_HOME/install/pialert.cron
-  fi
+  # if [ $USE_PYTHON_VERSION -eq 3 ] ; then
+  #   sed -i "s/\<python\>/$PYTHON_BIN/g" $PIALERT_HOME/install/pialert.cron
+  # fi
 
   (crontab -l 2>/dev/null || : ; cat $PIALERT_HOME/install/pialert.cron) | crontab -
 }
@@ -556,32 +461,57 @@ add_jobs_to_crontab() {
 publish_pialert() {
   if [ -e "$WEBROOT/pialert" ] || [ -L "$WEBROOT/pialert" ] ; then
     print_msg "- Deleting previous Pi.Alert site"
-    sudo rm -r "$WEBROOT/pialert"                                 2>&1 >> "$LOG"
+    sudo rm -r "$WEBROOT/pialert"                                                                               2>&1 >> "$LOG"
   fi
 
   print_msg "- Setting permissions..."
-  sudo chgrp -R www-data $PIALERT_HOME/db                         2>&1 >> "$LOG"
-  chmod -R g+rwx $PIALERT_HOME/db                                 2>&1 >> "$LOG"
-  chmod go+x $INSTALL_DIR                                         2>&1 >> "$LOG"
+  chmod go+x $INSTALL_DIR
+  sudo chgrp -R www-data "$PIALERT_HOME/db"                                                                     2>&1 >> "$LOG"
+  sudo chmod -R 775 "$PIALERT_HOME/db"                                                                          2>&1 >> "$LOG"
+  sudo chmod -R 775 "$PIALERT_HOME/db/temp"                                                                     2>&1 >> "$LOG"
+  sudo chgrp -R www-data "$PIALERT_HOME/config"                                                                 2>&1 >> "$LOG"
+  sudo chmod -R 775 "$PIALERT_HOME/config"                                                                      2>&1 >> "$LOG"
+  sudo chgrp -R www-data "$PIALERT_HOME/front/reports"                                                          2>&1 >> "$LOG"
+  sudo chmod -R 775 "$PIALERT_HOME/front/reports"                                                               2>&1 >> "$LOG"
+  sudo chgrp -R www-data "$PIALERT_HOME/front/satellites"                                                       2>&1 >> "$LOG"
+  sudo chmod -R 775 "$PIALERT_HOME/front/satellites"                                                            2>&1 >> "$LOG"
+  sudo chgrp -R www-data "$PIALERT_HOME/back/speedtest/"                                                        2>&1 >> "$LOG"
+  sudo chmod -R 775 "$PIALERT_HOME/back/speedtest/"                                                             2>&1 >> "$LOG"
+  chmod +x "$PIALERT_HOME/back/shoutrrr/arm64/shoutrrr"                                                         2>&1 >> "$LOG"
+  chmod +x "$PIALERT_HOME/back/shoutrrr/armhf/shoutrrr"                                                         2>&1 >> "$LOG"
+  chmod +x "$PIALERT_HOME/back/shoutrrr/x86/shoutrrr"                                                           2>&1 >> "$LOG"
+  print_msg "- Create Logfile Symlinks..."
+  touch "$PIALERT_HOME/log/pialert.vendors.log"                                                                 2>&1 >> "$LOG"
+  touch "$PIALERT_HOME/log/pialert.1.log"                                                                       2>&1 >> "$LOG"
+  touch "$PIALERT_HOME/log/pialert.cleanup.log"                                                                 2>&1 >> "$LOG"
+  touch "$PIALERT_HOME/log/pialert.webservices.log"                                                             2>&1 >> "$LOG"
+  ln -s "$PIALERT_HOME/log/pialert.vendors.log" "$PIALERT_HOME/front/php/server/pialert.vendors.log"            2>&1 >> "$LOG"
+  ln -s "$PIALERT_HOME/log/pialert.IP.log" "$PIALERT_HOME/front/php/server/pialert.IP.log"                      2>&1 >> "$LOG"
+  ln -s "$PIALERT_HOME/log/pialert.1.log" "$PIALERT_HOME/front/php/server/pialert.1.log"                        2>&1 >> "$LOG"
+  ln -s "$PIALERT_HOME/log/pialert.cleanup.log" "$PIALERT_HOME/front/php/server/pialert.cleanup.log"            2>&1 >> "$LOG"
+  ln -s "$PIALERT_HOME/log/pialert.webservices.log" "$PIALERT_HOME/front/php/server/pialert.webservices.log"    2>&1 >> "$LOG"
+
+  print_msg "- Set sudoers..."
+  sudo $PIALERT_HOME/back/pialert-cli set_sudoers                                                               2>&1 >> "$LOG"
 
   print_msg "- Publishing Pi.Alert web..."
-  sudo ln -s "$PIALERT_HOME/front" "$WEBROOT/pialert"             2>&1 >> "$LOG"
+  sudo ln -s "$PIALERT_HOME/front" "$WEBROOT/pialert"                                                           2>&1 >> "$LOG"
 
   print_msg "- Configuring http://pi.alert/ redirection..."
   if [ -e "$LIGHTTPD_CONF_DIR/conf-available/pialert_front.conf" ] ; then
-    sudo rm -r "$LIGHTTPD_CONF_DIR/conf-available/pialert_front.conf"  2>&1 >> "$LOG"
+    sudo rm -r "$LIGHTTPD_CONF_DIR/conf-available/pialert_front.conf"                                           2>&1 >> "$LOG"
   fi
-  sudo cp "$PIALERT_HOME/install/pialert_front.conf" "$LIGHTTPD_CONF_DIR/conf-available"  2>&1 >> "$LOG"
+  sudo cp "$PIALERT_HOME/install/pialert_front.conf" "$LIGHTTPD_CONF_DIR/conf-available"                        2>&1 >> "$LOG"
 
   if [ -e "$LIGHTTPD_CONF_DIR/conf-enabled/pialert_front.conf" ] || \
      [ -L "$LIGHTTPD_CONF_DIR/conf-enabled/pialert_front.conf" ] ; then
-    sudo rm -r "$LIGHTTPD_CONF_DIR/conf-enabled/pialert_front.conf" 2>&1 >> "$LOG"
+    sudo rm -r "$LIGHTTPD_CONF_DIR/conf-enabled/pialert_front.conf"                                             2>&1 >> "$LOG"
   fi
 
-  sudo ln -s ../conf-available/pialert_front.conf  "$LIGHTTPD_CONF_DIR/conf-enabled/pialert_front.conf"  2>&1 >> "$LOG"
+  sudo ln -s ../conf-available/pialert_front.conf  "$LIGHTTPD_CONF_DIR/conf-enabled/pialert_front.conf"         2>&1 >> "$LOG"
 
   print_msg "- Restarting lighttpd..."
-  sudo sudo service lighttpd restart                              2>&1 >> "$LOG"
+  sudo sudo service lighttpd restart                                                                            2>&1 >> "$LOG"
   # sudo /etc/init.d/lighttpd restart                             2>&1 >> "$LOG"
 }
 
@@ -597,21 +527,21 @@ set_pialert_default_page() {
 
   if [ -e "$WEBROOT/index.lighttpd.html" ] ; then
     if [ -e "$WEBROOT/index.lighttpd.html.orig" ] ; then
-      sudo rm "$WEBROOT/index.lighttpd.html"                      2>&1 >> "$LOG"
+      sudo rm "$WEBROOT/index.lighttpd.html"                                        2>&1 >> "$LOG"
     else
-      sudo mv "$WEBROOT/index.lighttpd.html"  "$WEBROOT/index.lighttpd.html.orig"  2>&1 >> "$LOG"
+      sudo mv "$WEBROOT/index.lighttpd.html"  "$WEBROOT/index.lighttpd.html.orig"   2>&1 >> "$LOG"
     fi
   fi
 
   if [ -e "$WEBROOT/index.html" ] || [ -L "$WEBROOT/index.html" ] ; then
     if [ -e "$WEBROOT/index.html.orig" ] ; then
-      sudo rm "$WEBROOT/index.html"                               2>&1 >> "$LOG"
+      sudo rm "$WEBROOT/index.html"                                                 2>&1 >> "$LOG"
     else
-      sudo mv "$WEBROOT/index.html" "$WEBROOT/index.html.orig"    2>&1 >> "$LOG"
+      sudo mv "$WEBROOT/index.html" "$WEBROOT/index.html.orig"                      2>&1 >> "$LOG"
     fi
   fi
 
-  sudo cp "$PIALERT_HOME/install/index.html" "$WEBROOT/index.html" 2>&1 >>"$LOG"
+  sudo cp "$PIALERT_HOME/install/index.html" "$WEBROOT/index.html"                  2>&1 >>"$LOG"
 }
 
 # ------------------------------------------------------------------------------
@@ -626,8 +556,21 @@ check_pialert_home() {
   if [ -e "$PIALERT_HOME" ] || [ -L "$PIALERT_HOME" ] ; then
     process_error "Pi.Alert path already exists: $PIALERT_HOME"
   fi
+  sudo apt-get install cron whiptail -y
 }
 
+# ------------------------------------------------------------------------------
+# Check Pi.Alert Installation Path
+# ------------------------------------------------------------------------------
+install_dependencies() {
+  print_msg "- Installing dependencies..."
+  if [ $(id -u) -eq 0 ]; then
+      #apt-get update                                             2>&1 >> "$LOG"
+      apt-get install sudo -y                                    2>&1 >> "$LOG"
+  fi
+
+  sudo apt-get install cron whiptail -y                          2>&1 >> "$LOG"
+}
 
 # ------------------------------------------------------------------------------
 # Move Logfile
@@ -641,7 +584,6 @@ move_logfile() {
   LOG="$NEWLOG"
   NEWLOG=""
 }
-
 
 # ------------------------------------------------------------------------------
 # ASK

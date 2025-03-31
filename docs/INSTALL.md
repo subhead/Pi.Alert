@@ -16,11 +16,7 @@ Estimated time: 20'
 
 ## One-step Automated Install:
 <!--- --------------------------------------------------------------------- --->
-  #### `curl -sSL https://github.com/pucherot/Pi.Alert/raw/main/install/pialert_install.sh | bash`
-
-## One-step Automated Update:
-<!--- --------------------------------------------------------------------- --->
-  #### `curl -sSL https://github.com/pucherot/Pi.Alert/raw/main/install/pialert_update.sh | bash`
+  #### `curl -sSL https://github.com/leiweibau/Pi.Alert/raw/main/install/pialert_install.sh | bash`
 
 ## Uninstall process
 <!--- --------------------------------------------------------------------- --->
@@ -143,12 +139,12 @@ block is not necessary
   redirect the default server page to pialert subfolder
   ```
   sudo mv /var/www/html/index.lighttpd.html /var/www/html/index.lighttpd.html.old
-  sudo ln -s ~/pialert/install/index.html /var/www/html/index.html
+  sudo ln -s $HOME/pialert/install/index.html /var/www/html/index.html
   ```
 
 3.4 - Install PHP
   ```
-  sudo apt-get install php php-cgi php-fpm php-sqlite3 -y     
+  sudo apt-get install php php-cgi php-fpm php-curl php-xml php-sqlite3 -y     
   ```
 
 3.5 - Activate PHP
@@ -162,6 +158,10 @@ block is not necessary
   sudo apt-get install sqlite3 -y
   ```
 
+3.7 - Install mmdblookup
+  ```
+  sudo apt-get install mmdb-bin -y
+  ```
 
 ### arp-scan & Python
 <!--- --------------------------------------------------------------------- --->
@@ -173,35 +173,51 @@ block is not necessary
 
 4.2 - Install dnsutils & net-tools utilities
   ```
-  sudo apt-get install dnsutils net-tools -y
+  sudo apt-get install dnsutils net-tools libwww-perl libtext-csv-perl -y
   ```
 
-4.3 - Test Python
+4.3 - Installation of tools for hostname detection
+  ```
+  sudo apt-get install avahi-utils nbtscan -y
+  ```
+
+4.4 - Installing nmap, zip and wakeonlan
+  ```
+  sudo apt-get install nmap zip wakeonlan aria2 -y
+  ```
+
+4.5 - Test Python
 
   New versions of 'Raspberry Pi OS' includes Python. You can check that 
   Python is installed with the command:
   ```
   python -V
   ```
-
-  New versions of Ubuntu includes Python 3. You can choose between use `python3`
-  command or to install Python 2 (that includes `python` command).
-  
-  
-  If you prefer to use Python 3, in the next installation block, you must update
-  `pialert.cron` file with the correct command: `python3` instead of `python`.
+  or
   ```
   python3 -V
   ```
 
-4.4 - If Python is not installed in your system, you can install it with this
+  Python 3 is required for this installation. If Python 2 is installed on 
+  the system, an installation of Python 3 is mandatory.
+
+  If Python 3 is installed, necessary packages have to be installed afterwards.
+  ```
+  sudo apt-get install python3-pip python3-cryptography python3-requests
+  ```
+
+4.6 - If Python 3 is not installed in your system, you can install it with this
   command:
   ```
-  sudo apt-get install python
+  sudo apt-get install python3 python3-pip python3-cryptography python3-requests
   ```
-  Or this one if you prefer Python 3:
+
+4.7 - Install additional packages
   ```
-  sudo apt-get install python3
+  pip3 install mac-vendor-lookup
+  pip3 install fritzconnection
+  pip3 install routeros_api
+  pip3 install pyunifi
   ```
 
 ### Pi.Alert
@@ -209,14 +225,14 @@ block is not necessary
 5.1 - Download Pi.Alert and uncompress
   ```
   cd
-  curl -LO https://github.com/pucherot/Pi.Alert/raw/main/tar/pialert_latest.tar
+  curl -LO https://github.com/leiweibau/Pi.Alert/raw/main/tar/pialert_latest.tar
   tar xvf pialert_latest.tar
   rm pialert_latest.tar
   ```
 
 5.2 - Public the front portal
   ```
-  sudo ln -s ~/pialert/front /var/www/html/pialert
+  sudo ln -s $HOME/pialert/front /var/www/html/pialert
   ```
 
 5.3 - Configure web server redirection
@@ -225,7 +241,7 @@ block is not necessary
   with the IP of your raspberry, youy must configure lighttpd to redirect these 
   requests to the correct pialert web folder
   ```
-  sudo cp ~/pialert/install/pialert_front.conf /etc/lighttpd/conf-available
+  sudo cp $HOME/pialert/install/pialert_front.conf /etc/lighttpd/conf-available
   sudo ln -s ../conf-available/pialert_front.conf /etc/lighttpd/conf-enabled/pialert_front.conf
   sudo /etc/init.d/lighttpd restart
   ```
@@ -239,8 +255,8 @@ block is not necessary
 
 5.5 - Config Pialert parameters
   ```
-  sed -i "s,'/home/pi/pialert','$HOME/pialert'," ~/pialert/config/pialert.conf          
-  nano  ~/pialert/config/pialert.conf
+  sed -i "s,'/home/pi/pialert','$HOME/pialert'," $HOME/pialert/config/pialert.conf          
+  nano  $HOME/pialert/config/pialert.conf
   ```
   - If you want to use email reporting, configure this parameters
     ```ini
@@ -267,47 +283,65 @@ block is not necessary
     DHCP_ACTIVE     = True
     ```
 
-5.6 - Update vendors DB
+5.6 - Enable some executables
   ```
-  python ~/pialert/back/pialert.py update_vendors
-  ```
-  or
-  ```
-  python3 ~/pialert/back/pialert.py update_vendors
+  chmod +x $HOME/pialert/back/speedtest-cli  
+  chmod +x $HOME/pialert/back/pialert-cli 
   ```
 
-5.7 - Test Pi.Alert Scan
+5.7 - Update vendors DB
   ```
-  python ~/pialert/back/pialert.py internet_IP
-  python ~/pialert/back/pialert.py 1
-  ```
-  or
-  ```
-  python3 ~/pialert/back/pialert.py internet_IP
-  python3 ~/pialert/back/pialert.py 1
+  python3 $HOME/pialert/back/pialert.py update_vendors
   ```
 
-5.8 - Update crontab template with python3
-
-  If you prefer to use Python 3 (installed in the previous block), you must
-  update `pialert.cron` file with the correct command: `python3` instead of
-  `python`
+5.8 - Test Pi.Alert Scan
   ```
-  sed -i 's/python/python3/g' ~/pialert/install/pialert.cron
+  python3 $HOME/pialert/back/pialert.py internet_IP
+  python3 $HOME/pialert/back/pialert.py 1
   ```
 
 5.9 - Add crontab jobs
   ```
-  (crontab -l 2>/dev/null; cat ~/pialert/install/pialert.cron) | crontab -
+  (crontab -l 2>/dev/null; cat $HOME/pialert/install/pialert.cron) | crontab -
   ```
 
-5.10 - Add permissions to the web-server user
+5.10 - Add necessary permissions
   ```
-  sudo chgrp -R www-data ~/pialert/db
-  chmod -R 770 ~/pialert/db
+  chmod go+x $HOME/pialert
+  sudo chgrp -R www-data "$HOME/pialert/db"
+  sudo chmod -R 775 "$HOME/pialert/db"
+  sudo chmod -R 775 "$HOME/pialert/db/temp"
+  sudo chgrp -R www-data "$HOME/pialert/config"
+  sudo chmod -R 775 "$HOME/pialert/config"
+  sudo chgrp -R www-data "$HOME/pialert/front/reports"
+  sudo chmod -R 775 "$HOME/pialert/front/reports"
+  sudo chgrp -R www-data "$HOME/pialert/back/speedtest/"
+  sudo chmod -R 775 "$HOME/pialert/back/speedtest/"
+  chmod +x $HOME/pialert/back/shoutrrr/arm64/shoutrrr
+  chmod +x $HOME/pialert/back/shoutrrr/armhf/shoutrrr
+  chmod +x $HOME/pialert/back/shoutrrr/x86/shoutrrr
   ```
 
-5.11 - Check DNS record for pi.alert (explained in point 2.7 of Pi.hole
+5.11 - Create Symlinks for the Log-Viewer
+  ```
+  touch "$HOME/pialert/log/pialert.vendors.log"
+  touch "$HOME/pialert/log/pialert.IP.log"
+  touch "$HOME/pialert/log/pialert.1.log"
+  touch "$HOME/pialert/log/pialert.cleanup.log"
+  touch "$HOME/pialert/log/pialert.webservices.log"
+  ln -s "$HOME/pialert/log/pialert.vendors.log" "$HOME/pialert/front/php/server/pialert.vendors.log"
+  ln -s "$HOME/pialert/log/pialert.IP.log" "$HOME/pialert/front/php/server/pialert.IP.log"
+  ln -s "$HOME/pialert/log/pialert.1.log" "$HOME/pialert/front/php/server/pialert.1.log"
+  ln -s "$HOME/pialert/log/pialert.cleanup.log" "$HOME/pialert/front/php/server/pialert.cleanup.log"
+  ln -s "$HOME/pialert/log/pialert.webservices.log" "$HOME/pialert/front/php/server/pialert.webservices.log"
+  ```
+
+5.12 - Set sudoers
+  ```
+  sudo $HOME/back/pialert-cli set_sudoers
+  ```
+
+5.13 - Check DNS record for pi.alert (explained in point 2.7 of Pi.hole
   installation)
   - Add pi.alert DNS Record
     ```
@@ -321,7 +355,7 @@ block is not necessary
       - pi.alert    192.168.1.x
       - (*replace 192.168.1.x with your Raspberry IP*)
 
-5.12 - Use admin panel to configure the devices
+5.14 - Use admin panel to configure the devices
   - http://pi.alert/
   - http://192.168.1.x/pialert/
     - (*replace 192.168.1.x with your Raspberry IP*)
@@ -336,5 +370,3 @@ block is not necessary
   GPL 3.0
   [Read more here](../LICENSE.txt)
 
-### Contact
-  pi.alert.application@gmail.com

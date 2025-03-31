@@ -1,14 +1,52 @@
 <!-- ---------------------------------------------------------------------------
 #  Pi.Alert
-#  Open Source Network Guard / WIFI & LAN intrusion detector 
+#  Open Source Network Guard / WIFI & LAN intrusion detector
 #
 #  deviceDetails.php - Front module. Device management page
 #-------------------------------------------------------------------------------
 #  Puche 2021        pi.alert.application@gmail.com        GNU GPLv3
+#  leiweibau 2024+                                         GNU GPLv3
 #--------------------------------------------------------------------------- -->
 
 <?php
-  require 'php/templates/header.php';
+session_start();
+
+if ($_SESSION["login"] != 1) {
+	header('Location: ./index.php');
+	exit;
+}
+
+require 'php/templates/header.php';
+require 'php/server/db.php';
+require 'php/server/journal.php';
+require 'php/server/graph.php';
+
+$DBFILE = '../db/pialert.db';
+OpenDB();
+
+function get_speedtestresults_table() {
+	global $db;
+
+	$res = $db->query('SELECT * FROM Tools_Speedtest_History');
+	while ($row = $res->fetchArray()) {
+		echo '<tr>
+            <td>' . $row['speed_date'] . '</td>
+            <td>' . $row['speed_isp'] . '</td>
+            <td>' . $row['speed_server'] . '</td>
+            <td style="color: rgb(22, 122, 196)">' . $row['speed_ping'] . '</td>
+            <td style="color: rgb(0, 166, 89)">' . $row['speed_down'] . '</td>
+            <td style="color: rgb(185, 0, 43)">' . $row['speed_up'] . '</td>
+          </tr>';
+	}
+}
+
+// ----------------- Get Graph Arrays -----------------------------------
+$speedtest_graph_array = array();
+$speedtest_graph_array = prepare_speedtestresults_graph();
+$Speedtest_Graph_Time = $speedtest_graph_array[0];
+$Speedtest_Graph_ping = $speedtest_graph_array[1];
+$Speedtest_Graph_Down = $speedtest_graph_array[2];
+$Speedtest_Graph_Up = $speedtest_graph_array[3];
 ?>
 
 <!-- Page ------------------------------------------------------------------ -->
@@ -16,69 +54,71 @@
 
 <!-- Content header--------------------------------------------------------- -->
     <section class="content-header">
-      <?php require 'php/templates/notification.php'; ?>
-
-      <h1 id="pageTitle">
-        &nbsp<small>Quering device info...</small>
-      </h1>
+      <?php require 'php/templates/notification.php';?>
+      <h1 id="pageTitle">&nbsp<small>Quering device info...</small></h1>
 
       <!-- period selector -->
       <span class="breadcrumb" style="top: 0px;">
         <select class="form-control" id="period" onchange="javascript: periodChanged();">
-          <option value="1 day">Today</option>
-          <option value="7 days">Last Week</option>
-          <option value="1 month" selected>Last Month</option>
-          <option value="1 year">Last Year</option>
-          <option value="100 years">All info</option>
+          <option value="1 day"><?=$pia_lang['DevDetail_Periodselect_today'];?></option>
+          <option value="7 days"><?=$pia_lang['DevDetail_Periodselect_LastWeek'];?></option>
+          <option value="1 month" selected><?=$pia_lang['DevDetail_Periodselect_LastMonth'];?></option>
+          <option value="1 year"><?=$pia_lang['DevDetail_Periodselect_LastYear'];?></option>
+          <option value="100 years"><?=$pia_lang['DevDetail_Periodselect_All'];?></option>
         </select>
       </span>
     </section>
-    
+
 <!-- Main content ---------------------------------------------------------- -->
     <section class="content">
 
-<!-- top small box 1 ------------------------------------------------------- -->
+    <div id="sticky-back-button" class="navbar navbar-default navbar-fixed-bottom">
+      <a id="sticky-back-link" class="btn btn-lg btn-default btn-block" href="./devices.php" role="button"><?=$pia_lang['Device_Table_nav_prev'];?></a>
+    </div>
+
+<!-- top small box  ------------------------------------------------------- -->
       <div class="row">
 
         <div class="col-lg-3 col-sm-6 col-xs-6">
           <a href="#" onclick="javascript: $('#tabDetails').trigger('click')">
-            <div class="small-box bg-aqua pa-small-box-aqua pa-small-box-2">
-              <div class="inner"> <h3 id="deviceStatus" style="margin-left: 0em"> -- </h3> </div>
-              <div class="icon"> <i id="deviceStatusIcon" class=""></i> </div>
-              <div class="small-box-footer pa-small-box-footer"> Current Status <i class="fa fa-arrow-circle-right"></i> </div>
+            <div class="small-box bg-aqua">
+              <div class="inner"><h3 id="deviceStatus" style="margin-left: 0em"> -- </h3>
+                <p class="infobox_label"><?=$pia_lang['DevDetail_Shortcut_CurrentStatus'];?></p>
+              </div>
+              <div class="icon"><i id="deviceStatusIcon" class=""></i></div>
             </div>
           </a>
         </div>
 
-<!-- top small box 2 ------------------------------------------------------- -->
         <div class="col-lg-3 col-sm-6 col-xs-6">
           <a href="#" onclick="javascript: $('#tabSessions').trigger('click');">
-            <div class="small-box bg-green pa-small-box-green pa-small-box-2">
-              <div class="inner"> <h3 id="deviceSessions"> -- </h3> </div>
-              <div class="icon"> <i class="fa fa-plug"></i> </div>
-              <div class="small-box-footer pa-small-box-footer"> Sessions <i class="fa fa-arrow-circle-right"></i> </div>
+            <div class="small-box bg-green">
+              <div class="inner"><h3 id="deviceSessions"> -- </h3>
+                <p class="infobox_label"><?=$pia_lang['DevDetail_Shortcut_Sessions'];?></p>
+              </div>
+              <div class="icon"><i class="mdi mdi-lan-connect"></i></div>
             </div>
           </a>
         </div>
 
-<!-- top small box 3 ------------------------------------------------------- -->
         <div class="col-lg-3 col-sm-6 col-xs-6">
           <a href="#" onclick="javascript: $('#tabPresence').trigger('click')">
-            <div  class="small-box bg-yellow pa-small-box-yellow pa-small-box-2">
-              <div class="inner"> <h3 id="deviceEvents" style="margin-left: 0em"> -- </h3> </div>
-              <div id="deviceEventsIcon" class="icon"> <i class="fa fa-calendar"></i> </div>
-              <div class="small-box-footer pa-small-box-footer"> Presence <i class="fa fa-arrow-circle-right"></i> </div>
+            <div  class="small-box bg-yellow">
+              <div class="inner"><h3 id="deviceEvents" style="margin-left: 0em"> -- </h3>
+                <p class="infobox_label"><?=$pia_lang['DevDetail_Shortcut_Presence'];?></p>
+              </div>
+              <div id="deviceEventsIcon" class="icon"><i class="fa fa-calendar"></i></div>
             </div>
           </a>
         </div>
 
-<!--  top small box 4 ------------------------------------------------------ -->
         <div class="col-lg-3 col-sm-6 col-xs-6">
           <a href="#" onclick="javascript: $('#tabEvents').trigger('click');">
-            <div  class="small-box bg-red pa-small-box-red pa-small-box-2">
-              <div class="inner"> <h3 id="deviceDownAlerts"> -- </h3> </div>
-              <div class="icon"> <i class="fa fa-warning"></i> </div>
-              <div class="small-box-footer pa-small-box-footer"> Down Alerts <i class="fa fa-arrow-circle-right"></i> </div>
+            <div  class="small-box bg-red">
+              <div class="inner"><h3 id="deviceDownAlerts"> -- </h3>
+                <p class="infobox_label"><?=$pia_lang['DevDetail_Shortcut_DownAlerts'];?></p>
+              </div>
+              <div class="icon"><i class="mdi mdi-lan-disconnect"></i></div>
             </div>
           </a>
         </div>
@@ -89,64 +129,50 @@
 <!-- tab control------------------------------------------------------------ -->
       <div class="row">
         <div class="col-lg-12 col-sm-12 col-xs-12">
-        <!-- <div class="box-transparent"> -->
-
-
+        
           <div id="navDevice" class="nav-tabs-custom">
-            <ul class="nav nav-tabs" style="fon t-size:16px;">
-              <li> <a id="tabDetails"  href="#panDetails"  data-toggle="tab"> Details  </a></li>
-              <li> <a id="tabSessions" href="#panSessions" data-toggle="tab"> Sessions </a></li>
-              <li> <a id="tabPresence" href="#panPresence" data-toggle="tab"> Presence </a></li>
-              <li> <a id="tabEvents"   href="#panEvents"   data-toggle="tab"> Events   </a></li>
-
+            <ul class="nav nav-tabs">
+              <li id="DetailsNavTab_detail">   <a id="tabDetails"    href="#panDetails"   data-toggle="tab"> <?=$pia_lang['DevDetail_Tab_Details'];?>  </a></li>
+              <li id="DetailsNavTab_tools">    <a id="tabNmap"       href="#panNmap"      data-toggle="tab"> <?=$pia_lang['DevDetail_Tab_Nmap'];;?>     </a></li>
+              <li id="DetailsNavTab_session">  <a id="tabSessions"   href="#panSessions"  data-toggle="tab"> <?=$pia_lang['DevDetail_Tab_Sessions'];?> </a></li>
+              <li id="DetailsNavTab_presence"> <a id="tabPresence"   href="#panPresence"  data-toggle="tab"> <?=$pia_lang['DevDetail_Tab_Presence'];?> </a></li>
+              <li id="DetailsNavTab_events">   <a id="tabEvents"     href="#panEvents"    data-toggle="tab"> <?=$pia_lang['DevDetail_Tab_Events'];?>   </a></li>
+              <li id="DetailsNavTab_internet"> <a id="tabSpeedtest"  href="#panSpeedtest" data-toggle="tab"> <?=$pia_lang['ookla_devdetails_tab_title'];?></a></li>
               <div class="btn-group pull-right">
-                <button type="button" class="btn btn-default"  style="padding: 10px; min-width: 30px;"
-                  id="btnPrevious" onclick="previousRecord()"> <i class="fa fa-chevron-left"></i> </button>
-
-                <div class="btn pa-btn-records"  style="padding: 10px; min-width: 30px; margin-left: 1px;"
-                  id="txtRecord"     > 0 / 0 </div>
-
-                <button type="button" class="btn btn-default"  style="padding: 10px; min-width: 30px; margin-left: 1px;"
-                  id="btnNext"     onclick="nextRecord()"> <i class="fa fa-chevron-right"></i> </button>
+                <button type="button" class="btn btn-default" id="btnPrevious" onclick="previousRecord()"><i class="fa fa-chevron-left"></i></button>
+                <div class="btn pa-btn-records" id="txtRecord"> 0 / 0 </div>
+                <button type="button" class="btn btn-default" id="btnNext" onclick="nextRecord()"><i class="fa fa-chevron-right"></i></button>
               </div>
             </ul>
 
-
-
-            <div class="tab-content" style="min-height: 430px">
+            <div class="tab-content" style="min-height: 430px;">
 
 <!-- tab page 1 ------------------------------------------------------------ -->
-<!--
-              <div class="tab-pane fade in active" id="panDetails">
--->
+
               <div class="tab-pane fade" id="panDetails">
 
                 <div class="row">
     <!-- column 1 -->
                   <div class="col-lg-4 col-sm-6 col-xs-12">
-                    <h4 class="bottom-border-aqua">Main Info</h4>
+                    <h4 class="bottom-border-aqua"><?=$pia_lang['DevDetail_MainInfo_Title'];?></h4>
                     <div class="box-body form-horizontal">
 
                       <!-- MAC -->
                       <div class="form-group">
-                        <label class="col-sm-3 control-label">MAC</label>
-                        <div class="col-sm-9">
-                          <input class="form-control" id="txtMAC" type="text" readonly value="--">
-                        </div>
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_mac'];?></label>
+                        <div class="col-sm-8"><input class="form-control" id="txtMAC" type="text" readonly value="--"></div>
                       </div>
-      
+
                       <!-- Name -->
                       <div class="form-group">
-                        <label class="col-sm-3 control-label">Name</label>
-                        <div class="col-sm-9">
-                          <input class="form-control" id="txtName" type="text" value="--">
-                        </div>
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_Name'];?></label>
+                        <div class="col-sm-8"><input class="form-control" id="txtName" type="text" value="--"></div>
                       </div>
 
                       <!-- Owner -->
                       <div class="form-group">
-                        <label class="col-sm-3 control-label">Owner</label>
-                        <div class="col-sm-9">
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_Owner'];?></label>
+                        <div class="col-sm-8">
                           <div class="input-group">
                             <input class="form-control" id="txtOwner" type="text" value="--">
                             <div class="input-group-btn">
@@ -161,8 +187,8 @@
 
                       <!-- Type -->
                       <div class="form-group">
-                        <label class="col-sm-3 control-label">Type</label>
-                        <div class="col-sm-9">
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_Type'];?></label>
+                        <div class="col-sm-8">
                           <div class="input-group">
                             <input class="form-control" id="txtDeviceType" type="text" value="--">
                             <div class="input-group-btn">
@@ -181,24 +207,26 @@
 
                       <!-- Vendor -->
                       <div class="form-group">
-                        <label class="col-sm-3 control-label">Vendor</label>
-                        <div class="col-sm-9">
-                          <input class="form-control" id="txtVendor" type="text" value="--">
-                        </div>
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_Vendor'];?></label>
+                        <div class="col-sm-8"><input class="form-control" id="txtVendor" type="text" value="--"></div>
                       </div>
 
-                      <!-- Favorite -->
+                      <!-- Model -->
                       <div class="form-group">
-                        <label class="col-sm-3 control-label">Favorite</label>
-                        <div class="col-sm-9" style="padding-top:6px;">
-                          <input class="checkbox blue hidden" id="chkFavorite" type="checkbox">
-                        </div>
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_Model'];?></label>
+                        <div class="col-sm-8"><input class="form-control" id="txtModel" type="text" value="--"></div>
+                      </div>
+
+                      <!-- Serialnumber -->
+                      <div class="form-group">
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_Serialnumber'];?></label>
+                        <div class="col-sm-8"><input class="form-control" id="txtSerialnumber" type="text" value="--"></div>
                       </div>
 
                       <!-- Group -->
                       <div class="form-group">
-                        <label class="col-sm-3 control-label">Group</label>
-                        <div class="col-sm-9">
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_Group'];?></label>
+                        <div class="col-sm-8">
                           <div class="input-group">
                             <input class="form-control" id="txtGroup" type="text" value="--">
                             <div class="input-group-btn">
@@ -218,8 +246,8 @@
 
                       <!-- Location -->
                       <div class="form-group">
-                        <label class="col-sm-3 control-label">Location</label>
-                        <div class="col-sm-9">
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_Location'];?></label>
+                        <div class="col-sm-8">
                           <div class="input-group">
                             <input class="form-control" id="txtLocation" type="text" value="--">
                             <div class="input-group-btn">
@@ -239,73 +267,147 @@
                         </div>
                       </div>
 
-                      <!-- Comments -->
+                      <!-- Favorite -->
                       <div class="form-group">
-                        <label class="col-sm-3 control-label">Comments</label>
-                        <div class="col-sm-9">
-                          <textarea class="form-control" rows="3" id="txtComments"></textarea>
-                        </div>
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_Favorite'];?></label>
+                        <div class="col-sm-8" style="padding-top:6px;"><input class="checkbox blue hidden" id="chkFavorite" type="checkbox"></div>
                       </div>
 
-                    </div>          
-                  </div>          
+                      <!-- Comments -->
+                      <div class="form-group">
+                        <label class="col-sm-4 control-label"><?=$pia_lang['DevDetail_MainInfo_Comments'];?></label>
+                        <div class="col-sm-8"><textarea class="form-control" rows="3" id="txtComments"></textarea></div>
+                      </div>
+
+                      <!-- ScanSource -->
+                      <div class="form-group hide_element">
+                        <label class="col-sm-3 control-label">ScanSource</label>
+                        <div class="col-sm-9"><textarea class="form-control" rows="3" id="txtScanSource" readonly></textarea></div>
+                      </div>
+
+                    </div>
+                  </div>
 
     <!-- column 2 -->
                   <div class="col-lg-4 col-sm-6 col-xs-12">
-                    <h4 class="bottom-border-aqua">Session Info</h4>
+                    <h4 class="bottom-border-aqua"><?=$pia_lang['DevDetail_SessionInfo_Title'];?></h4>
                     <div class="box-body form-horizontal">
 
                       <!-- Status -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label">Status</label>
-                        <div class="col-sm-7">
-                          <input class="form-control" id="txtStatus" type="text" readonly value="--">
-                        </div>
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_SessionInfo_Status'];?></label>
+                        <div class="col-sm-7"><input class="form-control" id="txtStatus" type="text" readonly value="--"></div>
                       </div>
-      
+
                       <!-- First Session -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label">First Session</label>
-                        <div class="col-sm-7">
-                          <input class="form-control" id="txtFirstConnection" type="text" readonly value="--">
-                        </div>
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_SessionInfo_FirstSession'];?></label>
+                        <div class="col-sm-7"><input class="form-control" id="txtFirstConnection" type="text" readonly value="--"></div>
                       </div>
-      
+
                       <!-- Last Session -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label">Last Session</label>
-                        <div class="col-sm-7">
-                          <input class="form-control" id="txtLastConnection" type="text" readonly value="--">
-                        </div>
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_SessionInfo_LastSession'];?></label>
+                        <div class="col-sm-7"><input class="form-control" id="txtLastConnection" type="text" readonly value="--"></div>
                       </div>
-      
+
                       <!-- Last IP -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label">Last IP</label>
-                        <div class="col-sm-7">
-                          <input class="form-control" id="txtLastIP" type="text" readonly value="--">
-                        </div>
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_SessionInfo_LastIP'];?></label>
+                        <div class="col-sm-7"><input class="form-control" id="txtLastIP" type="text" readonly value="--"></div>
                       </div>
 
                       <!-- Static IP -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label">Static IP</label>
-                        <div class="col-sm-7" style="padding-top:6px;">
-                          <input class="checkbox blue hidden" id="chkStaticIP" type="checkbox">
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_SessionInfo_StaticIP'];?></label>
+                        <div class="col-sm-7" style="padding-top:6px;"><input class="checkbox blue hidden" id="chkStaticIP" type="checkbox"></div>
+                      </div>
+                    </div>
+
+                    <h4 class="bottom-border-aqua"><?=$pia_lang['DevDetail_Network_Titel'];?></h4>
+                    <div class="box-body form-horizontal">
+
+                      <!-- Network Node -->
+                      <div class="form-group">
+                        <label class="col-sm-6 control-label"><?=$pia_lang['DevDetail_MainInfo_Network'];?></label>
+                        <div class="col-sm-6">
+                          <div class="input-group">
+                            <input class="form-control" id="txtNetworkNodeMac" type="text" value="--">
+                            <div class="input-group-btn">
+                              <button type="button" class="btn btn-info dropdown-toggle" data-toggle="dropdown" aria-expanded="false" id="buttonNetworkNodeMac">
+                                <span class="fa fa-caret-down"></span></button>
+                              <ul id="dropdownNetworkNodeMac" class="dropdown-menu dropdown-menu-right">
+                              </ul>
+                            </div>
+
+                          </div>
                         </div>
                       </div>
-      
+
+                      <!-- Network Port -->
+                      <div class="form-group">
+                        <label class="col-sm-6 control-label"><?=$pia_lang['DevDetail_MainInfo_Network_Port'];?></label>
+                        <div class="col-sm-6"><input class="form-control" id="txtNetworkPort" type="text" value="--"></div>
+                      </div>
+
+                      <!-- Connection Type -->
+                      <div class="form-group">
+                        <label class="col-sm-6 control-label"><?=$pia_lang['DevDetail_MainInfo_Network_ConnectType'];?></label>
+                        <div class="col-sm-6">
+                          <div class="input-group">
+                            <input class="form-control" id="txtConnectionType" type="text" value="--">
+                            <div class="input-group-btn">
+                              <button type="button" class="btn btn-info dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
+                                <span class="fa fa-caret-down"></span></button>
+                              <ul id="dropdownLocation" class="dropdown-menu dropdown-menu-right">
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtConnectionType','Ethernet')">        Ethernet</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtConnectionType','Fibre')">           Fibre</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtConnectionType','WiFi')">            WiFi</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtConnectionType','Bluetooth')">       Bluetooth</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtConnectionType','Virtual Machine')"> Virtual Machine</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtConnectionType','Container')">       Container</a></li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Link Speed -->
+                      <div class="form-group">
+                        <label class="col-sm-6 control-label"><?=$pia_lang['DevDetail_MainInfo_Network_LinkSpeed'];?></label>
+                        <div class="col-sm-6">
+                          <div class="input-group">
+                            <input class="form-control" id="txtLinkSpeed" type="text" value="--">
+                            <div class="input-group-btn">
+                              <button type="button" class="btn btn-info dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
+                                <span class="fa fa-caret-down"></span></button>
+                              <ul id="dropdownLocation" class="dropdown-menu dropdown-menu-right">
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtLinkSpeed','10 Mbps')">    10 Mbps</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtLinkSpeed','100 Mbps')">  100 Mbps</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtLinkSpeed','1.0 Gbps')">  1.0 Gbps</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtLinkSpeed','2.5 Gbps')">  2.5 Gbps</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtLinkSpeed','10 Gbps')">    10 Gbps</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtLinkSpeed','20 Gbps')">    20 Gbps</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtLinkSpeed','25 Gbps')">    25 Gbps</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtLinkSpeed','40 Gbps')">    40 Gbps</a></li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
+
                   </div>
 
     <!-- column 3 -->
                   <div class="col-lg-4 col-sm-6 col-xs-12">
-                    <h4 class="bottom-border-aqua">Events & Alerts config</h4>
+                    <h4 class="bottom-border-aqua"><?=$pia_lang['DevDetail_EveandAl_Title'];?></h4>
                     <div class="box-body form-horizontal">
 
                       <!-- Scan Cycle -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label">Scan Cycle</label>
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_EveandAl_ScanCycle'];?></label>
                         <div class="col-sm-7">
                           <div class="input-group">
                             <input class="form-control" id="txtScanCycle" type="text" value="--" readonly >
@@ -313,9 +415,9 @@
                               <button type="button" class="btn btn-info dropdown-toggle" data-toggle="dropdown" aria-expanded="false" id="dropdownButtonScanCycle">
                                 <span class="fa fa-caret-down"></span></button>
                               <ul id="dropdownScanCycle" class="dropdown-menu dropdown-menu-right">
-                                <li><a href="javascript:void(0)" onclick="setTextValue('txtScanCycle','1 min')">   Scan 1 min every 5 min</a></li>
-                                <li><a href="javascript:void(0)" onclick="setTextValue('txtScanCycle','15 min');"> Scan 12 min every 15 min</a></li>
-                                <li><a href="javascript:void(0)" onclick="setTextValue('txtScanCycle','0 min');">  Don't Scan</a></li>
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtScanCycle','1')"><?=$pia_lang['DevDetail_EveandAl_ScanCycle_a'];?></a></li>
+                                <!-- <li><a href="javascript:void(0)" onclick="setTextValue('txtScanCycle','15 min');"> Scan 12 min every 15 min</a></li> -->
+                                <li><a href="javascript:void(0)" onclick="setTextValue('txtScanCycle','0');"><?=$pia_lang['DevDetail_EveandAl_ScanCycle_z'];?></a></li>
                               </ul>
                             </div>
                           </div>
@@ -324,23 +426,19 @@
 
                       <!-- Alert events -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label">Alert All Events</label>
-                        <div class="col-sm-7" style="padding-top:6px;">
-                          <input class="checkbox blue hidden" id="chkAlertEvents" type="checkbox">
-                        </div>
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_EveandAl_AlertAllEvents'];?></label>
+                        <div class="col-sm-7" style="padding-top:6px;"><input class="checkbox blue hidden" id="chkAlertEvents" type="checkbox"></div>
                       </div>
-      
+
                       <!-- Alert Down -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label">Alert Down</label>
-                        <div class="col-sm-7" style="padding-top:6px;">
-                          <input class="checkbox red hidden" id="chkAlertDown" type="checkbox">
-                        </div>
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_EveandAl_AlertDown'];?></label>
+                        <div class="col-sm-7" style="padding-top:6px;"><input class="checkbox red hidden" id="chkAlertDown" type="checkbox"></div>
                       </div>
 
                       <!-- Skip Notifications -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label" style="padding-top: 0px; padding-left: 0px;">Skip repeated notifications during</label>
+                        <label class="col-sm-5 control-label" style="padding-top: 0px; padding-left: 0px;"><?=$pia_lang['DevDetail_EveandAl_Skip'];?></label>
                         <div class="col-sm-7">
                           <div class="input-group">
                             <input class="form-control" id="txtSkipRepeated" type="text" value="--" readonly >
@@ -359,33 +457,39 @@
                         </div>
                       </div>
 
+                      <!-- Scan Validation -->
+                      <div class="form-group">
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_EveandAl_ScanValid'];?></label>
+                        <div class="col-sm-7"><input class="form-control" id="txtScanValidation" type="text" value="--"></div>
+                      </div>
+
                       <!-- New Device -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label">New Device:</label>
-                        <div class="col-sm-7" style="padding-top:6px;">
-                          <input class="checkbox orange hidden" id="chkNewDevice" type="checkbox">
-                        </div>
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_EveandAl_NewDevice'];?>:</label>
+                        <div class="col-sm-7" style="padding-top:6px;"><input class="checkbox orange hidden" id="chkNewDevice" type="checkbox"></div>
                       </div>
 
                       <!-- Archived -->
                       <div class="form-group">
-                        <label class="col-sm-5 control-label">Archived:</label>
-                        <div class="col-sm-7" style="padding-top:6px;">
-                          <input class="checkbox blue hidden" id="chkArchived" type="checkbox">
-                        </div>
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_EveandAl_Archived'];?>:</label>
+                        <div class="col-sm-7" style="padding-top:6px;"><input class="checkbox blue hidden" id="chkArchived" type="checkbox"></div>
+                      </div>
+
+                      <!-- Show on Presence page -->
+                      <div class="form-group">
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_MainInfo_ShowPresence'];?></label>
+                        <div class="col-sm-7" style="padding-top:6px;"><input class="checkbox blue hidden" id="chkShowPresence" type="checkbox"></div>
                       </div>
 
                       <!-- Randomized MAC -->
                       <div class="form-group" >
-                        <label class="col-sm-5 control-label">Random MAC:</label>
+                        <label class="col-sm-5 control-label"><?=$pia_lang['DevDetail_EveandAl_RandomMAC'];?>:</label>
                         <div class="col-sm-7" style="padding-top:6px;">
                           <span id="iconRandomMACinactive" data-toggle="tooltip" data-placement="right" title="Random MAC is Inactive">
                             <i style="font-size: 24px;" class="text-gray glyphicon glyphicon-random"></i> &nbsp &nbsp </span>
-
                           <span id="iconRandomMACactive"   data-toggle="tooltip" data-placement="right" title="Random MAC is Active" class="hidden">
                             <i style="font-size: 24px;" class="text-yellow glyphicon glyphicon-random"></i> &nbsp &nbsp </span>
-
-                          <a href="https://github.com/pucherot/Pi.Alert/blob/main/docs/RAMDOM_MAC.md" target="_blank" style="color: #777;"> 
+                          <a href="https://github.com/leiweibau/Pi.Alert/blob/main/docs/RAMDOM_MAC.md" target="_blank" style="color: #777;">
                             <i class="fa fa-info-circle"></i> </a>
                         </div>
                       </div>
@@ -396,17 +500,22 @@
                   <!-- Buttons -->
                   <div class="col-xs-12">
                     <div class="pull-right">
-                        <button type="button" class="btn btn-default pa-btn pa-btn-delete"  style="margin-left:0px;"
-                          id="btnDelete"   onclick="askDeleteDevice()">   Delete Device </button>
-                        <button type="button" class="btn btn-default pa-btn" style="margin-left:6px;" 
-                          id="btnRestore"  onclick="getDeviceData(true)"> Reset Changes </button>
-                        <button type="button" disabled class="btn btn-primary pa-btn" style="margin-left:6px; " 
-                          id="btnSave"     onclick="setDeviceData()" >     Save </button>
+                        <button type="button" class="btn btn-warning" id="btnDeleteEvents" onclick="askDeleteDeviceEvents()"><?=$pia_lang['DevDetail_button_DeleteEvents'];?> </button>
+                        <button type="button" class="btn btn-danger" id="btnDelete" onclick="askDeleteDevice()"><?=$pia_lang['DevDetail_button_Delete'];?> </button>
+                        <button type="button" class="btn btn-default" id="btnRestore" onclick="getDeviceData(true)"><?=$pia_lang['DevDetail_button_Reset'];?> </button>
+                        <button type="button" disabled class="btn btn-primary" id="btnSave" onclick="setDeviceData()"><?=$pia_lang['DevDetail_button_Save'];?> </button>
                     </div>
                   </div>
 
                 </div>
-              </div>                                                                         
+                    <div style="width: 100%; position: relative; top: 12px; right: -10px;">
+                      <div class="btn-group pull-right" style="position: relative; right: 0px;">
+                        <button type="button" class="btn btn-default" id="btnPrevious_down" onclick="previousRecord()"> <i class="fa fa-chevron-left"></i> </button>
+                        <div class="btn pa-btn-records" id="txtRecord_down"> 0 / 0 </div>
+                        <button type="button" class="btn btn-default" id="btnNext_down" onclick="nextRecord()"> <i class="fa fa-chevron-right"></i> </button>
+                      </div>
+                    </div>
+              </div>
 
 <!-- tab page 2 ------------------------------------------------------------ -->
               <div class="tab-pane fade table-responsive" id="panSessions">
@@ -415,25 +524,117 @@
                 <table id="tableSessions" class="table table-bordered table-hover table-striped ">
                   <thead>
                   <tr>
-                    <th>Order</th>
-                    <th>Connection</th>
-                    <th>Disconnection</th>
-                    <th>Duration</th>
-                    <th>IP</th>
-                    <th>Additional info</th>
+                    <th><?=$pia_lang['DevDetail_SessionTable_Order'];?></th>
+                    <th><?=$pia_lang['DevDetail_SessionTable_Connection'];?></th>
+                    <th><?=$pia_lang['DevDetail_SessionTable_Disconnection'];?></th>
+                    <th><?=$pia_lang['DevDetail_SessionTable_Duration'];?></th>
+                    <th><?=$pia_lang['DevDetail_SessionTable_IP'];?></th>
+                    <th><?=$pia_lang['DevDetail_SessionTable_Additionalinfo'];?></th>
                   </tr>
                   </thead>
                 </table>
               </div>
 
 <!-- tab page 3 ------------------------------------------------------------ -->
+              <div class="tab-pane fade" id="panNmap">
+<?php
+if ($_REQUEST['mac'] == 'Internet') {
+	?>
+                <h4 class="">Online Speedtest</h4>
+                <div style="width:100%; text-align: center; margin-bottom: 50px; display: inline-block;">
+                  <button type="button" id="speedtestcli" class="btn btn-primary pa-btn" onclick="speedtestcli()">Start Speedtest-cli</button>
+<?php
+$speedtest_binary = '../back/speedtest/speedtest';
+	if (file_exists($speedtest_binary)) {
+		echo '<button type="button" id="speedtestcli_ookla" class="btn btn-primary pa-btn" onclick="speedtest_ookla(\'test\')">Start Speedtest (Ookla)</button>';
+	} else {
+		echo '<button type="button" id="speedtestcli_ookla" class="btn btn-primary pa-btn" onclick="speedtest_ookla(\'get\')">Download Speedtest-Client</button>';
+	}
+	?>
+                </div>
+                  <script>
+                  function speedtestcli() {
+                    $( "#scanoutput" ).empty();
+                    $.ajax({
+                      method: "POST",
+                      url: "./php/server/speedtestcli.php",
+                      beforeSend: function() { $('#scanoutput').addClass("ajax_scripts_loading"); },
+                      complete: function() { $('#scanoutput').removeClass("ajax_scripts_loading"); },
+                      success: function(data, textStatus) {
+                          $("#scanoutput").html(data);
+                      }
+                    })
+                  }
+
+                  function speedtest_ookla(modus) {
+                    $( "#scanoutput" ).empty();
+                    var additionalData = {
+                      mod: modus
+                    };
+                    $.ajax({
+                      method: "POST",
+                      url: "./php/server/speedtest_ookla.php",
+                      data: additionalData,
+                      beforeSend: function() { $('#scanoutput').addClass("ajax_scripts_loading"); },
+                      complete: function() { $('#scanoutput').removeClass("ajax_scripts_loading"); },
+                      success: function(data, textStatus) {
+                          $("#scanoutput").html(data);
+                      }
+                    })
+                  }
+                  </script>
+<?php
+}
+?>
+<?php
+if ($_REQUEST['mac'] != 'Internet') {
+	?>
+                <h4 class="">Wake-on-LAN</h4>
+                <div style="width:100%; text-align: center;">
+                  <script>
+                      
+                  </script>
+                  <button type="button" id="btnwakeonlan" class="btn btn-primary pa-btn" onclick="askwakeonlan()">Loading...</button>
+                </div>
+<?php
+}
+?>
+                <h4 class="">Nmap Scans</h4>
+                <div style="width:100%; text-align: center;">
+                  <button type="button" id="manualnmap_fast" class="btn btn-primary pa-btn" onclick="manualnmapscan(document.getElementById('txtLastIP').value, 'fast')">Loading...</button>
+                  <button type="button" id="manualnmap_normal" class="btn btn-primary pa-btn" onclick="manualnmapscan(document.getElementById('txtLastIP').value, 'normal')">Loading...</button>
+                  <button type="button" id="manualnmap_detail" class="btn btn-primary pa-btn" onclick="manualnmapscan(document.getElementById('txtLastIP').value, 'detail')">Loading...</button>
+                </div>
+
+                <div id="scanoutput" style="margin-top: 30px;">
+
+                </div>
+                  <script>
+                  function manualnmapscan(targetip, mode) {
+                    $( "#scanoutput" ).empty();
+                    $.ajax({
+                      method: "POST",
+                      url: "./php/server/nmap_scan.php",
+                      timeout: 60000,
+                      data: { scan: targetip, mode: mode },
+                      beforeSend: function() { $('#scanoutput').addClass("ajax_scripts_loading"); },
+                      complete: function() { $('#scanoutput').removeClass("ajax_scripts_loading"); },
+                      success: function(data, textStatus) {
+                          $("#scanoutput").html(data);
+                      }
+                    })
+                  }
+                  </script>
+              </div>
+
+<!-- tab page 4 ------------------------------------------------------------ -->
               <div class="tab-pane fade table-responsive" id="panPresence">
 
                   <!-- spinner -->
                   <div id="loading" style="display: none">
                     <div class="pa_semitransparent-panel"></div>
                     <div class="panel panel-default pa_spinner">
-                      <table><td width="130px" align="middle">Loading...</td><td><i class="ion ion-ios-loop-strong fa-spin fa-2x fa-fw"></td></table>
+                      <table><td width="130px" align="middle">Loading...</td><td><i class="ion ion-ios-sync fa-spin fa-2x fa-fw"></td></table>
                     </div>
                   </div>
 
@@ -442,30 +643,102 @@
                   </div>
               </div>
 
-<!-- tab page 4 ------------------------------------------------------------ -->
+<!-- tab page 5 ------------------------------------------------------------ -->
               <div class="tab-pane fade table-responsive" id="panEvents">
 
                 <!-- Hide Connections -->
                 <div class="text-center">
                   <label>
                     <input class="checkbox blue hidden" id="chkHideConnectionEvents" type="checkbox" checked>
-                    Hide Connection Events
+                    <?=$pia_lang['DevDetail_Events_CheckBox'];?>
                   </label>
                 </div>
-                
+
                 <!-- Datatable Events -->
                 <table id="tableEvents" class="table table-bordered table-hover table-striped ">
                   <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Event type</th>
-                    <th>IP</th>
-                    <th>Additional info</th>
+                    <th><?=$pia_lang['EVE_TableHead_Date'];?></th>
+                    <th><?=$pia_lang['EVE_TableHead_EventType'];?></th>
+                    <th><?=$pia_lang['EVE_TableHead_IP'];?></th>
+                    <th><?=$pia_lang['EVE_TableHead_AdditionalInfo'];?></th>
                   </tr>
                   </thead>
                 </table>
               </div>
 
+<?php
+if ($_REQUEST['mac'] == 'Internet') {
+	?>
+<!-- tab page 6 ------------------------------------------------------------ -->
+              <div class="tab-pane fade table-responsive" id="panSpeedtest">
+
+                <!-- Speedtest Graph -->
+                <div class="col-md-12" style="margin-bottom:20px;">
+                  <div class="chart" style="height: 200px;">
+                    <script src="lib/AdminLTE/bower_components/chart.js/Chart.js"></script>
+                    <canvas id="SpeedtestChart"></canvas>
+                  </div>
+                </div>
+                <script src="js/graph_online_history.js"></script>
+                <script>
+                  var speedtest_js_time = [<?php pia_graph_devices_data($Speedtest_Graph_Time);?>];
+                  var speedtest_js_ping = [<?php pia_graph_devices_data($Speedtest_Graph_ping);?>];
+                  var speedtest_js_down = [<?php pia_graph_devices_data($Speedtest_Graph_Down);?>];
+                  var speedtest_js_up = [<?php pia_graph_devices_data($Speedtest_Graph_Up);?>];
+                  graph_speedtest_history(speedtest_js_time, speedtest_js_ping, speedtest_js_down, speedtest_js_up);
+                </script>
+<?php
+// Check if Ookla Speedtest is installed
+	if (file_exists('../back/speedtest/speedtest')) {
+    // Show Speedtest Config
+    $speedtest_config = substr(str_replace(' ', '', get_config_parmeter('SPEEDTEST_TASK_HOUR')),1,-1);
+    if (strlen($speedtest_config) > 0) {
+      echo '<div style="margin-bottom: 30px;">';
+      $speedtest_hours = array();
+      $speedtest_hours = explode(',', $speedtest_config);
+      $speedtest_hours_count = sizeof($speedtest_hours);
+      if ($speedtest_hours_count == 1) {
+        echo $pia_lang['DevDetail_Speedtest_note_a'] . $speedtest_config . $pia_lang['DevDetail_Speedtest_note_c'];
+      } elseif ($speedtest_hours_count > 1) {
+        echo $pia_lang['DevDetail_Speedtest_note_a'];
+        for ($i=0;$i<$speedtest_hours_count;++$i) {
+          if ($i+2 < $speedtest_hours_count) {
+            echo $speedtest_hours[$i].', ';
+          } elseif ($i+2 == $speedtest_hours_count) {
+            echo $speedtest_hours[$i].$pia_lang['DevDetail_Speedtest_note_b'];
+          } else {
+            echo $speedtest_hours[$i];
+          }
+        }
+        echo $pia_lang['DevDetail_Speedtest_note_c'];
+      }
+      echo '</div>';
+    }
+
+		echo '<table id="tableSpeedtest" class="table table-bordered table-hover table-striped">
+            <thead>
+              <tr>
+                <th>' . $pia_lang['ookla_devdetails_table_time'] . '</th>
+                <th>' . $pia_lang['ookla_devdetails_table_isp'] . '</th>
+                <th>' . $pia_lang['ookla_devdetails_table_server'] . '</th>
+                <th>' . $pia_lang['ookla_devdetails_table_ping'] . '</th>
+                <th>' . $pia_lang['ookla_devdetails_table_down'] . '</th>
+                <th>' . $pia_lang['ookla_devdetails_table_up'] . '</th>
+              </tr>
+            </thead>
+            <tbody>';
+		get_speedtestresults_table();
+		echo '  </tbody>
+    </table>';
+	} else {
+		echo $pia_lang['ookla_devdetails_required'];
+	}
+	?>
+              </div>
+<?php
+}
+?>
             </div>
             <!-- /.tab-content -->
           </div>
@@ -476,40 +749,35 @@
         <!-- /.col -->
       </div>
       <!-- /.row -->
-
-<!-- ----------------------------------------------------------------------- -->
+      <div style="width: 100%; height:50px;"></div>
     </section>
     <!-- /.content -->
   </div>
   <!-- /.content-wrapper -->
 
-
 <!-- ----------------------------------------------------------------------- -->
 <?php
-  require 'php/templates/footer.php';
+require 'php/templates/footer.php';
 ?>
 
-
-<!-- ----------------------------------------------------------------------- -->
 <!-- iCkeck -->
-  <link rel="stylesheet" href="lib/AdminLTE/plugins/iCheck/all.css">
-  <script src="lib/AdminLTE/plugins/iCheck/icheck.min.js"></script>
-
+<link rel="stylesheet" href="lib/AdminLTE/plugins/iCheck/all.css">
+<script src="lib/AdminLTE/plugins/iCheck/icheck.min.js"></script>
 <!-- Datatable -->
-  <link rel="stylesheet" href="lib/AdminLTE/bower_components/datatables.net-bs/css/dataTables.bootstrap.min.css">
-  <script src="lib/AdminLTE/bower_components/datatables.net/js/jquery.dataTables.min.js"></script>
-  <script src="lib/AdminLTE/bower_components/datatables.net-bs/js/dataTables.bootstrap.min.js"></script>
-
+<link rel="stylesheet" href="lib/AdminLTE/bower_components/datatables.net-bs/css/dataTables.bootstrap.min.css">
+<script src="lib/AdminLTE/bower_components/datatables.net/js/jquery.dataTables.min.js"></script>
+<script src="lib/AdminLTE/bower_components/datatables.net-bs/js/dataTables.bootstrap.min.js"></script>
 <!-- fullCalendar -->
-  <link rel="stylesheet" href="lib/AdminLTE/bower_components/fullcalendar/dist/fullcalendar.min.css">
-  <link rel="stylesheet" href="lib/AdminLTE/bower_components/fullcalendar/dist/fullcalendar.print.min.css" media="print">
-  <script src="lib/AdminLTE/bower_components/moment/moment.js"></script>
-  <script src="lib/AdminLTE/bower_components/fullcalendar/dist/fullcalendar.min.js"></script>
+<link rel="stylesheet" href="lib/AdminLTE/bower_components/fullcalendar/dist/fullcalendar.min.css">
+<link rel="stylesheet" href="lib/AdminLTE/bower_components/fullcalendar/dist/fullcalendar.print.min.css" media="print">
+<script src="lib/AdminLTE/bower_components/moment/moment.js"></script>
+<script src="lib/AdminLTE/bower_components/fullcalendar/dist/fullcalendar.min.js"></script>
+<script src="lib/AdminLTE/bower_components/fullcalendar/dist/locale-all.js"></script>
 
 <!-- Dark-Mode Patch -->
 <?php
 if ($ENABLED_DARKMODE === True) {
-   echo '<link rel="stylesheet" href="css/dark-patch-cal.css">';
+	echo '<link rel="stylesheet" href="css/dark-patch-cal.css">';
 }
 ?>
 
@@ -534,9 +802,11 @@ if ($ENABLED_DARKMODE === True) {
   // Read parameters & Initialize components
   main();
 
-
 // -----------------------------------------------------------------------------
 function main () {
+  // set page defaults
+  $('#DetailsNavTab_internet').addClass    ('hidden');
+
   // Initialize MAC
   var urlParams = new URLSearchParams(window.location.search);
   if (urlParams.has ('mac') == true) {
@@ -557,23 +827,27 @@ function main () {
     $.get('php/server/parameters.php?action=get&parameter='+ parTab, function(data) {
       var result = JSON.parse(data);
       if (result) {
-        tab = result;
+        if (mac !== "Internet" && result === "tabSpeedtest") {
+          tab = "tabDetails";
+        } else {
+          tab = result;
+        }
       }
-  
+
       // get parameter value
       $.get('php/server/parameters.php?action=get&parameter='+ parSessionsRows, function(data) {
         var result = JSON.parse(data);
         if (Number.isInteger (result) ) {
             sessionsRows = result;
         }
-  
+
         // get parameter value
         $.get('php/server/parameters.php?action=get&parameter='+ parEventsRows, function(data) {
           var result = JSON.parse(data);
           if (Number.isInteger (result) ) {
               eventsRows = result;
           }
-    
+
           // get parameter value
           $.get('php/server/parameters.php?action=get&parameter='+ parEventsHide, function(data) {
             var result = JSON.parse(data);
@@ -581,23 +855,22 @@ function main () {
                 eventsHide = result;
                 $('#chkHideConnectionEvents')[0].checked = eval(eventsHide == 'true');
             }
-  
+
             // Initialize components with parameters
             initializeTabs();
             initializeiCheck();
             initializeCombos();
             initializeDatatables();
             initializeCalendar();
-      
+            initializeSpeedtest();
+
             // Read Cookies
             devicesList = getCookie('devicesList');
-            deleteCookie ('devicesList');
             if (devicesList != '') {
                 devicesList = JSON.parse (devicesList);
             } else {
                 devicesList = [];
             }
-
 
             // query data
             getDeviceData(true);
@@ -610,7 +883,7 @@ function main () {
                 $('#calendar').fullCalendar('rerenderEvents');
               }
             });
-  
+
             // Ask before exit without saving data
             window.onbeforeunload = function(){
               if ( ! document.getElementById('btnSave').hasAttribute('disabled') ) {
@@ -625,21 +898,10 @@ function main () {
   });
 }
 
-
-
 // -----------------------------------------------------------------------------
 function initializeTabs () {
   // Activate panel
   $('.nav-tabs a[id='+ tab +']').tab('show');
-
-  //   Not necessary if first panel is not active
-  //   // Force show first panel
-  //   var panel = $('.nav-tabs a[id='+ tab +']').attr('href');
-  //   panel = panel.substring(1);
-  //   var element = $('#'+panel)[0];
-  //   element.classList.add('in');
-  //   element.classList.add('active');
-
   // When changed save new current tab
   $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
     setParameter (parTab, $(e.target).attr('id'));
@@ -668,7 +930,7 @@ function initializeiCheck () {
     radioClass:    'iradio_flat-red',
     increaseArea:  '20%'
   });
- 
+
   // When toggle iCheck
   $('input').on('ifToggled', function(event){
     // Hide / Show Events
@@ -678,23 +940,18 @@ function initializeiCheck () {
     } else {
       // Activate save & restore
       activateSaveRestoreData();
-
-      // Ask skip notifications
-      // if (event.currentTarget.id == 'chkArchived' ) {
-      //   askSkipNotifications();
-      // }
     }
   });
 }
 
-
 // -----------------------------------------------------------------------------
 function initializeCombos () {
   // Initialize combos with queries
-  initializeCombo ( $('#dropdownOwner')[0],       'getOwners',       'txtOwner');
-  initializeCombo ( $('#dropdownDeviceType')[0],  'getDeviceTypes',  'txtDeviceType');
-  initializeCombo ( $('#dropdownGroup')[0],       'getGroups',       'txtGroup');
-  initializeCombo ( $('#dropdownLocation')[0],    'getLocations',    'txtLocation');
+  initializeCombo ( $('#dropdownOwner')[0],                      'getOwners',       'txtOwner');
+  initializeCombo ( $('#dropdownDeviceType')[0],                 'getDeviceTypes',  'txtDeviceType');
+  initializeCombo ( $('#dropdownGroup')[0],                      'getGroups',       'txtGroup');
+  initializeCombo ( $('#dropdownLocation')[0],                   'getLocations',    'txtLocation');
+  initializeCombo ( $('#dropdownNetworkNodeMac')[0],             'getNetworkNodes', 'txtNetworkNodeMac');
 
   // Initialize static combos
   initializeComboSkipRepeated ();
@@ -715,14 +972,26 @@ function initializeCombo (HTMLelement, queryAction, txtDataField) {
         order = item['order'];
       }
 
-      // add dropdown item
-      HTMLelement.innerHTML +=
-        '<li><a href="javascript:void(0)" onclick="setTextValue(\''+
-        txtDataField +'\',\''+ item['name'] +'\')">'+ item['name'] + '</a></li>'
+      id = item['name'];
+      // use explicitly specified id (value) if avaliable
+      if(item['id'])
+      {
+        id = item['id'];
+      }
+      if (queryAction == "getNetworkNodes") {
+      // add NetworkNodes dropdown item
+        HTMLelement.innerHTML +=
+          '<li><a href="javascript:void(0)" onclick="setTextValue(\''+
+          txtDataField +'\',\''+ id +'\')">'+ item['name'] + ' [' + id + ']</a></li>'
+      } else {
+        // add dropdown item
+        HTMLelement.innerHTML +=
+          '<li><a href="javascript:void(0)" onclick="setTextValue(\''+
+          txtDataField +'\',\''+ id +'\')">'+ item['name'] + '</a></li>'        
+      }
     });
   });
 }
-
 
 function initializeComboSkipRepeated () {
   // find dropdown menu element
@@ -749,7 +1018,6 @@ function findSkipRepeated (value='0') {
   });
   return itemSelected;
 }
-
 
 // -----------------------------------------------------------------------------
 function initializeDatatables () {
@@ -781,9 +1049,16 @@ function initializeDatatables () {
     'processing'  : true,
     'language'    : {
       processing: '<table><td width="130px" align="middle">Loading...</td>'+
-                  '<td><i class="ion ion-ios-loop-strong fa-spin fa-2x fa-fw">'+
+                  '<td><i class="ion ion-ios-sync fa-spin fa-2x fa-fw">'+
                   '</td></table>',
-      emptyTable: 'No data'
+      emptyTable: 'No data',
+      "lengthMenu": "<?=$pia_lang['EVE_Tablelenght'];?>",
+      "search":     "<?=$pia_lang['EVE_Searchbox'];?>: ",
+      "paginate": {
+          "next":       "<?=$pia_lang['EVE_Table_nav_next'];?>",
+          "previous":   "<?=$pia_lang['EVE_Table_nav_prev'];?>"
+      },
+      "info":           "<?=$pia_lang['EVE_Table_info'];?>",
     }
   });
 
@@ -813,32 +1088,36 @@ function initializeDatatables () {
     'processing'  : true,
     'language'    : {
       processing: '<table><td width="130px" align="middle">Loading...</td>'+
-                  '<td><i class="ion ion-ios-loop-strong fa-spin fa-2x fa-fw">'+
+                  '<td><i class="ion ion-ios-sync fa-spin fa-2x fa-fw">'+
                   '</td></table>',
-      emptyTable: 'No data'
+      emptyTable: 'No data',
+      "lengthMenu": "<?=$pia_lang['EVE_Tablelenght'];?>",
+      "search":     "<?=$pia_lang['EVE_Searchbox'];?>: ",
+      "paginate": {
+          "next":       "<?=$pia_lang['EVE_Table_nav_next'];?>",
+          "previous":   "<?=$pia_lang['EVE_Table_nav_prev'];?>"
+      },
+      "info":           "<?=$pia_lang['EVE_Table_info'];?>",
     }
   });
 
   // Save Parameters rows & order when changed
   $('#tableSessions').on( 'length.dt', function ( e, settings, len ) {
     setParameter (parSessionsRows, len);
-
     // Sync Rows in both datatables
-    // if ( $('#tableEvents').DataTable().page.len() != len) {
-    //   $('#tableEvents').DataTable().page.len( len ).draw();
-    // }
+    if ( $('#tableEvents').DataTable().page.len() != len) {
+      $('#tableEvents').DataTable().page.len( len ).draw();
+    }
   } );
-  
+
   $('#tableEvents').on( 'length.dt', function ( e, settings, len ) {
     setParameter (parEventsRows, len);
-
     // Sync Rows in both datatables
-    // if ( $('#tableSessions').DataTable().page.len() != len) {
-    //   $('#tableSessions').DataTable().page.len( len ).draw();
-    // }
+    if ( $('#tableSessions').DataTable().page.len() != len) {
+      $('#tableSessions').DataTable().page.len( len ).draw();
+    }
   } );
 };
-
 
 // -----------------------------------------------------------------------------
 function initializeCalendar () {
@@ -846,35 +1125,45 @@ function initializeCalendar () {
     editable          : false,
     droppable         : false,
     defaultView       : 'agendaMonth',
-
     height            : 'auto',
     firstDay          : 1,
     allDaySlot        : false,
     slotDuration      : '02:00:00',
     slotLabelInterval : '04:00:00',
     slotLabelFormat   : 'H:mm',
-    timeFormat        : 'H:mm', 
-
+    timeFormat        : 'H:mm',
+    locale            : '<?=$pia_lang['PRE_CalHead_lang'];?>',
     header: {
       left            : 'prev,next today',
       center          : 'title',
-      right           : 'agendaYear,agendaMonth,agendaWeek'
+      right           : 'agendaYear,agendaMonth,agendaWeek,agendaDay'
     },
 
     views: {
       agendaYear: {
         type               : 'agenda',
         duration           : { year: 1 },
-        buttonText         : 'year',
+        buttonText         : '<?=$pia_lang['PRE_CalHead_year'];?>',
         columnHeaderFormat : ''
       },
 
       agendaMonth: {
         type               : 'agenda',
         duration           : { month: 1 },
-        buttonText         : 'month',
+        buttonText         : '<?=$pia_lang['PRE_CalHead_month'];?>',
         columnHeaderFormat : 'D'
+      },
+      agendaWeek: {
+        buttonText         : '<?=$pia_lang['PRE_CalHead_week'];?>',
+      },
+      agendaDay: {
+        type              : 'agenda',
+        duration          : { day: 1 },
+        buttonText        : '<?=$pia_lang['PRE_CalHead_day'];?>',
+        slotLabelFormat   : 'H',
+        slotDuration      : '01:00:00'
       }
+
     },
 
     viewRender: function(view) {
@@ -894,11 +1183,11 @@ function initializeCalendar () {
               listContent[i+1].style.borderRightColor = '#808080';
             }
             listHeader[i].style.paddingLeft = '10px';
-          }   
-        };    
+          }
+        };
       }
     },
- 
+
     columnHeaderText: function(mom) {
       switch ($('#calendar').fullCalendar('getView').name) {
       case 'agendaYear':
@@ -920,11 +1209,11 @@ function initializeCalendar () {
     },
 
     eventRender: function (event, element) {
-      $(element).tooltip({container: 'body', placement: 'right',
+      $(element).tooltip({container: 'body', placement: 'bottom',
                           title: event.tooltip});
       // element.attr ('title', event.tooltip);  // Alternative tooltip
     },
-      
+
     loading: function( isLoading, view ) {
         if (isLoading) {
           $('#loading').show();
@@ -936,7 +1225,6 @@ function initializeCalendar () {
   })
 }
 
-
 // -----------------------------------------------------------------------------
 function periodChanged () {
   // Save Parameter Period
@@ -947,7 +1235,6 @@ function periodChanged () {
   getDeviceData(true);
   getSessionsPresenceEvents();
 }
-
 
 // -----------------------------------------------------------------------------
 function getDeviceData (readAllData=false) {
@@ -961,11 +1248,15 @@ function getDeviceData (readAllData=false) {
 
   // Deactivate next previous buttons
   if (readAllData) {
-    $('#btnPrevious').attr        ('disabled','');
-    $('#btnPrevious').addClass    ('text-gray50');
-    $('#btnNext').attr            ('disabled','');
-    $('#btnNext').addClass        ('text-gray50');
-    $("body").css                 ("cursor", "progress");
+    $('#btnPrevious').attr          ('disabled','');
+    $('#btnPrevious').addClass      ('text-gray50');
+    $('#btnPrevious_down').attr     ('disabled','');
+    $('#btnPrevious_down').addClass ('text-gray50');
+    $('#btnNext').attr              ('disabled','');
+    $('#btnNext').addClass          ('text-gray50');
+    $('#btnNext_down').attr         ('disabled','');
+    $('#btnNext_down').addClass     ('text-gray50');
+    $("body").css                   ("cursor", "progress");
   }
 
   // get data from server
@@ -979,36 +1270,44 @@ function getDeviceData (readAllData=false) {
       $('#deviceStatus').html ('--');
       $('#deviceStatus')[0].className = 'text-gray';
       $('#deviceStatusIcon')[0].className = '';
-  
-      $('#deviceSessions').html   ('--');
-      $('#deviceDownAlerts').html ('--');
-      $('#deviceEvents').html     ('--');
- 
+
+      $('#deviceSessions').html    ('--');
+      $('#deviceDownAlerts').html  ('--');
+      $('#deviceEvents').html      ('--');
+
       $('#txtMAC').val             ('--');
       $('#txtName').val            ('--');
       $('#txtOwner').val           ('--');
       $('#txtDeviceType').val      ('--');
       $('#txtVendor').val          ('--');
+      $('#txtModel').val           ('--');
+      $('#txtSerialnumber').val    ('--');
 
-      $('#chkFavorite').iCheck     ('uncheck'); 
+      $('#chkFavorite').iCheck     ('uncheck');
+      $('#chkShowPresence').iCheck ('uncheck');
       $('#txtGroup').val           ('--');
       $('#txtLocation').val        ('--');
       $('#txtComments').val        ('--');
+      $('#txtNetworkNodeMac').val  ('--');
+      $('#txtNetworkPort').val     ('--');
+      $('#txtConnectionType').val  ('--');
+      $('#txtLinkSpeed').val       ('--');
 
       $('#txtFirstConnection').val ('--');
       $('#txtLastConnection').val  ('--');
       $('#txtLastIP').val          ('--');
       $('#txtStatus').val          ('--');
-      $('#chkStaticIP').iCheck     ('uncheck'); 
-  
-      $('#txtScanCycle').val       ('--');
-      $('#chkAlertEvents').iCheck  ('uncheck') 
-      $('#chkAlertDown').iCheck    ('uncheck') 
-      $('#txtSkipRepeated').val    ('--');
-      $('#chkNewDevice').iCheck    ('uncheck'); 
-      $('#chkArchived').iCheck     ('uncheck'); 
+      $('#chkStaticIP').iCheck     ('uncheck');
 
-      $('#iconRandomMACactive').addClass ('hidden');
+      $('#txtScanCycle').val       ('--');
+      $('#chkAlertEvents').iCheck  ('uncheck');
+      $('#chkAlertDown').iCheck    ('uncheck');
+      $('#txtSkipRepeated').val    ('--');
+      $('#txtScanValidation').val  ('--');
+      $('#chkNewDevice').iCheck    ('uncheck');
+      $('#chkArchived').iCheck     ('uncheck');
+
+      $('#iconRandomMACactive').addClass      ('hidden');
       $('#iconRandomMACinactive').removeClass ('hidden');
 
       // Deactivate controls
@@ -1035,19 +1334,19 @@ function getDeviceData (readAllData=false) {
       // Status
       $('#deviceStatus').html (deviceData['dev_Status'].replace('-', ''));
       switch (deviceData['dev_Status']) {
-        case 'On-line':   icon='fa fa-check';    color='text-green';   break;
-        case 'Off-line':  icon='fa fa-close';    color='text-gray';    break;
-        case 'Down':      icon='fa fa-warning';  color='text-red';     break;
-        case null:        icon='fa fa-warning';  color='text-red';     $('#deviceStatus').html ('???');  break;
-        default:          icon='';               color='';             break;
+        case 'On-line':   icon='fa fa-check';             color='text-green';   break;
+        case 'Off-line':  icon='fa fa-close';             color='text-gray';    break;
+        case 'Down':      icon='mdi mdi-lan-disconnect';  color='text-red';     break;
+        case null:        icon='fa fa-warning';           color='text-red';     $('#deviceStatus').html ('???');  break;
+        default:          icon='';                        color='';             break;
       };
       $('#deviceStatus')[0].className = color;
       $('#deviceStatusIcon')[0].className = icon +' '+ color;
-  
+
       // Totals
       $('#deviceSessions').html   (deviceData['dev_Sessions'].toLocaleString());
       $('#deviceDownAlerts').html (deviceData['dev_DownAlerts'].toLocaleString());
-  
+
       // Presence
       $('#deviceEventsTitle').html ('Presence');
       $('#deviceEventsIcon').html  ('<i class="fa fa-calendar">');
@@ -1056,7 +1355,7 @@ function getDeviceData (readAllData=false) {
       } else {
         $('#deviceEvents').html (deviceData['dev_PresenceHours'].toLocaleString() +' h.');
       }
-  
+
       // Device info
       if (readAllData) {
         // Activate controls
@@ -1064,35 +1363,66 @@ function getDeviceData (readAllData=false) {
 
         mac                                          =deviceData['dev_MAC'];
 
+        // update the mac parameter in the URL, this makes the selected device persistent when the page is reloaded
+        var searchParams = new URLSearchParams(window.location.search);
+        searchParams.set("mac", mac);
+        var newRelativePathQuery = window.location.pathname + '?' + searchParams.toString();
+        history.pushState(null, '', newRelativePathQuery);
+        getSessionsPresenceEvents();
+
         $('#txtMAC').val                             (deviceData['dev_MAC']);
         $('#txtName').val                            (deviceData['dev_Name']);
         $('#txtOwner').val                           (deviceData['dev_Owner']);
         $('#txtDeviceType').val                      (deviceData['dev_DeviceType']);
         $('#txtVendor').val                          (deviceData['dev_Vendor']);
-  
+        $('#txtModel').val                           (deviceData['dev_Model']);
+        $('#txtSerialnumber').val                    (deviceData['dev_Serialnumber']);
+
         if (deviceData['dev_Favorite'] == 1)         {$('#chkFavorite').iCheck('check');}    else {$('#chkFavorite').iCheck('uncheck');}
+        if (deviceData['dev_PresencePage'] == 1)     {$('#chkShowPresence').iCheck('check');}    else {$('#chkShowPresence').iCheck('uncheck');}
         $('#txtGroup').val                           (deviceData['dev_Group']);
         $('#txtLocation').val                        (deviceData['dev_Location']);
         $('#txtComments').val                        (deviceData['dev_Comments']);
-  
+        $('#txtNetworkNodeMac').val                  (deviceData['dev_Network_Node_MAC']);
+        $('#txtNetworkPort').val                     (deviceData['dev_Network_Node_port']);
+        $('#txtConnectionType').val                  (deviceData['dev_ConnectionType']);
+        $('#txtLinkSpeed').val                       (deviceData['dev_LinkSpeed']);
+
         $('#txtFirstConnection').val                 (deviceData['dev_FirstConnection']);
         $('#txtLastConnection').val                  (deviceData['dev_LastConnection']);
         $('#txtLastIP').val                          (deviceData['dev_LastIP']);
+        $('#txtScanSource').val                      (deviceData['dev_ScanSource']);
         $('#txtStatus').val                          (deviceData['dev_Status'].replace('-', ''));
         if (deviceData['dev_StaticIP'] == 1)         {$('#chkStaticIP').iCheck('check');}    else {$('#chkStaticIP').iCheck('uncheck');}
-    
-        $('#txtScanCycle').val                       (deviceData['dev_ScanCycle'] +' min');
+
+        $('#txtScanCycle').val                       (deviceData['dev_ScanCycle']);
         if (deviceData['dev_AlertEvents'] == 1)      {$('#chkAlertEvents').iCheck('check');} else {$('#chkAlertEvents').iCheck('uncheck');}
         if (deviceData['dev_AlertDeviceDown'] == 1)  {$('#chkAlertDown').iCheck('check');}   else {$('#chkAlertDown').iCheck('uncheck');}
         $('#txtSkipRepeated').val                    (findSkipRepeated (deviceData['dev_SkipRepeated']));
+        $('#txtScanValidation').val                  (deviceData['dev_Scan_Validation']);
         if (deviceData['dev_NewDevice'] == 1)        {$('#chkNewDevice').iCheck('check');}   else {$('#chkNewDevice').iCheck('uncheck');}
         if (deviceData['dev_Archived'] == 1)         {$('#chkArchived').iCheck('check');}    else {$('#chkArchived').iCheck('uncheck');}
 
-        if (deviceData['dev_RandomMAC'] == 1)        {$('#iconRandomMACactive').removeClass   ('hidden');
-                                                      $('#iconRandomMACinactive').addClass    ('hidden'); }
-        else                                         {$('#iconRandomMACactive').addClass      ('hidden');
-                                                      $('#iconRandomMACinactive').removeClass ('hidden'); };
+        if (deviceData['dev_RandomMAC'] == 1)        {$('#iconRandomMACactive').removeClass    ('hidden');
+                                                      $('#iconRandomMACinactive').addClass     ('hidden'); }
+        else                                         {$('#iconRandomMACactive').addClass       ('hidden');
+                                                      $('#iconRandomMACinactive').removeClass  ('hidden'); };
+        if (deviceData['dev_ScanSource'] !== 'local') {$('#DetailsNavTab_tools').addClass       ('hidden'); }
+        if (deviceData['dev_MAC'] === 'Internet')     {$('#DetailsNavTab_internet').removeClass ('hidden'); }
+        else                                         {$('#DetailsNavTab_internet').addClass    ('hidden'); };
+
         deactivateSaveRestoreData ();
+        initToolsSection();
+
+        if (deviceData['dev_ScanSource'] !== 'local') {
+            var navbarBackButton = $('#navbar-back-button');
+            var stickyBackButton = $('#sticky-back-link');
+            var originalHref = navbarBackButton.attr('href');
+            var newHref = originalHref + '?scansource=' + deviceData['dev_ScanSource'];
+            navbarBackButton.attr('href', newHref);
+            stickyBackButton.attr('href', newHref);
+        }
+
       }
 
       // Check if device is part of the devicesList
@@ -1105,23 +1435,32 @@ function getDeviceData (readAllData=false) {
 
     // Record number
     $('#txtRecord').html (pos+1 +' / '+ devicesList.length);
+    $('#txtRecord_down').html (pos+1 +' / '+ devicesList.length);
 
     // Deactivate previous button
     if (pos <= 0) {
-      $('#btnPrevious').attr        ('disabled','');
-      $('#btnPrevious').addClass    ('text-gray50');
+      $('#btnPrevious').attr             ('disabled','');
+      $('#btnPrevious').addClass         ('text-gray50');
+      $('#btnPrevious_down').attr        ('disabled','');
+      $('#btnPrevious_down').addClass    ('text-gray50');
     } else {
-      $('#btnPrevious').removeAttr  ('disabled');
-      $('#btnPrevious').removeClass ('text-gray50');
+      $('#btnPrevious').removeAttr       ('disabled');
+      $('#btnPrevious').removeClass      ('text-gray50');
+      $('#btnPrevious_down').removeAttr  ('disabled');
+      $('#btnPrevious_down').removeClass ('text-gray50');
     }
-  
+
     // Deactivate next button
     if (pos >= (devicesList.length-1)) {
-      $('#btnNext').attr        ('disabled','');
-      $('#btnNext').addClass    ('text-gray50');
+      $('#btnNext').attr             ('disabled','');
+      $('#btnNext').addClass         ('text-gray50');
+      $('#btnNext_down').attr        ('disabled','');
+      $('#btnNext_down').addClass    ('text-gray50');
     } else {
-      $('#btnNext').removeAttr  ('disabled');
-      $('#btnNext').removeClass ('text-gray50');
+      $('#btnNext').removeAttr       ('disabled');
+      $('#btnNext').removeClass      ('text-gray50');
+      $('#btnNext_down').removeAttr  ('disabled');
+      $('#btnNext_down').removeClass ('text-gray50');
     }
 
     // Timer for refresh data
@@ -1131,7 +1470,6 @@ function getDeviceData (readAllData=false) {
 
 }
 
-
 // -----------------------------------------------------------------------------
 function previousRecord () {
   // Save Changes
@@ -1139,12 +1477,12 @@ function previousRecord () {
     setDeviceData (previousRecord);
     return;
   }
-
   // Previous Record
   if (pos > 0) {
     pos--;
     mac = devicesList[pos].toString();
     getDeviceData (true);
+    initToolsSection();
   }
 }
 
@@ -1155,15 +1493,14 @@ function nextRecord () {
     setDeviceData (nextRecord);
     return;
   }
-
   // Next Record
   if (pos < (devicesList.length-1) ) {
     pos++;
     mac = devicesList[pos].toString();
     getDeviceData (true);
+    initToolsSection();
   }
 }
-
 
 // -----------------------------------------------------------------------------
 function setDeviceData (refreshCallback='') {
@@ -1174,25 +1511,33 @@ function setDeviceData (refreshCallback='') {
 
   // update data to server
   $.get('php/server/devices.php?action=setDeviceData&mac='+ mac
-    + '&name='           + $('#txtName').val()
-    + '&owner='          + $('#txtOwner').val()
-    + '&type='           + $('#txtDeviceType').val()
-    + '&vendor='         + $('#txtVendor').val()
-    + '&favorite='       + ($('#chkFavorite')[0].checked * 1)
-    + '&group='          + $('#txtGroup').val()
-    + '&location='       + $('#txtLocation').val()
-    + '&comments='       + $('#txtComments').val()
-    + '&staticIP='       + ($('#chkStaticIP')[0].checked * 1)
-    + '&scancycle='      + $('#txtScanCycle').val().split(' ')[0]
-    + '&alertevents='    + ($('#chkAlertEvents')[0].checked * 1)
-    + '&alertdown='      + ($('#chkAlertDown')[0].checked * 1)
-    + '&skiprepeated='   + $('#txtSkipRepeated').val().split(' ')[0]
-    + '&newdevice='      + ($('#chkNewDevice')[0].checked * 1)
-    + '&archived='       + ($('#chkArchived')[0].checked * 1)
+    + '&name='            + encodeURIComponent($('#txtName').val())
+    + '&owner='           + encodeURIComponent($('#txtOwner').val())
+    + '&type='            + $('#txtDeviceType').val()
+    + '&vendor='          + $('#txtVendor').val()
+    + '&model='           + encodeURIComponent($('#txtModel').val())
+    + '&serialnumber='    + $('#txtSerialnumber').val()
+    + '&favorite='        + ($('#chkFavorite')[0].checked * 1)
+    + '&showpresence='    + ($('#chkShowPresence')[0].checked * 1)
+    + '&group='           + $('#txtGroup').val()
+    + '&location='        + $('#txtLocation').val()
+    + '&comments='        + $('#txtComments').val()
+    + '&networknode='     + $('#txtNetworkNodeMac').val()
+    + '&networknodeport=' + $('#txtNetworkPort').val()
+    + '&connectiontype='  + $('#txtConnectionType').val()
+    + '&linkspeed='       + $('#txtLinkSpeed').val()
+    + '&staticIP='        + ($('#chkStaticIP')[0].checked * 1)
+    + '&scancycle='       + $('#txtScanCycle').val()
+    + '&alertevents='     + ($('#chkAlertEvents')[0].checked * 1)
+    + '&alertdown='       + ($('#chkAlertDown')[0].checked * 1)
+    + '&skiprepeated='    + $('#txtSkipRepeated').val().split(' ')[0]
+    + '&scanvalid='       + $('#txtScanValidation').val()
+    + '&newdevice='       + ($('#chkNewDevice')[0].checked * 1)
+    + '&archived='        + ($('#chkArchived')[0].checked * 1)
     , function(msg) {
 
-    // deactivate button 
-    deactivateSaveRestoreData ();
+    // deactivate button
+    deactivateSaveRestoreData();
     showMessage (msg);
 
     // Callback fuction
@@ -1200,80 +1545,131 @@ function setDeviceData (refreshCallback='') {
       refreshCallback();
     }
   });
+
+  // refresh Sidebar
+  setTimeout(function(){
+      updateTotals();
+  }, 1000);
+  
 }
 
+function initializeSpeedtest () {
+  $('#tableSpeedtest').DataTable({
+    'paging'       : true,
+    'lengthChange' : true,
+    'lengthMenu'   : [[10, 25, 50, 100, 500, -1], [10, 25, 50, 100, 500, 'All']],
+    //'bLengthChange': false,
+    'searching'    : true,
+    'ordering'     : true,
+    'info'         : true,
+    'autoWidth'    : false,
+    'pageLength'   : 10,
+    'order'        : [[0, 'desc']],
+    'columns': [
+        { "data": 0 },
+        { "data": 1 },
+        { "data": 2 },
+        { "data": 3 },
+        { "data": 4 },
+        { "data": 5 }
+      ],
+
+    'columnDefs'  : [
+      {className: 'text-center', targets: [3,4,5] },
+
+      //Device Name
+      {targets: [0],
+       "createdCell": function (td, cellData, rowData, row, col) {
+         $(td).html ('<b>'+ cellData +'</b>');
+      } },
+      {targets: [3],
+       "createdCell": function (td, cellData, rowData, row, col) {
+         $(td).html (cellData +' ms');
+      } },
+      {targets: [4,5],
+       "createdCell": function (td, cellData, rowData, row, col) {
+         $(td).html (cellData +' Mbps');
+      } },
+
+    ],
+
+    // Processing
+    'processing'  : true,
+    'language'    : {
+      processing: '<table><td width="130px" align="middle">Loading...</td><td><i class="ion ion-ios-sync fa-spin fa-2x fa-fw"></td></table>',
+      emptyTable: 'No data',
+      "lengthMenu": "<?=$pia_lang['EVE_Tablelenght'];?>",
+      "search":     "<?=$pia_lang['EVE_Searchbox'];?>: ",
+      "paginate": {
+          "next":       "<?=$pia_lang['EVE_Table_nav_next'];?>",
+          "previous":   "<?=$pia_lang['EVE_Table_nav_prev'];?>"
+      },
+      "info":           "<?=$pia_lang['EVE_Table_info'];?>",
+    },
+  });
+};
 
 // -----------------------------------------------------------------------------
-function askSkipNotifications () {
-  // Check MAC
+function askDeleteDeviceEvents () {
   if (mac == '') {
     return;
   }
-
-  // When Archived
-  if ($('#chkArchived')[0].checked && $('#txtScanCycle').val().split(' ')[0] != "0") {
-    // Ask skip notifications
-    showModalDefault ('Device Archived', 'Do you want to skip all notifications for this device?',
-      'Cancel', 'Ok', 'skipNotifications');
-  }
+  // Ask delete device Events
+  showModalWarning ('<?=$pia_lang['DevDetail_button_DeleteEvents'];?>', '<?=$pia_lang['DevDetail_button_DeleteEvents_Warning'];?>',
+    '<?=$pia_lang['Gen_Cancel'];?>', '<?=$pia_lang['Gen_Delete'];?>', 'deleteDeviceEvents');
 }
 
-// -----------------------------------------------------------------------------
-function skipNotifications () {
-  // Check MAC
+function deleteDeviceEvents () {
   if (mac == '') {
     return;
   }
-
-  // Set cycle 0
-  $('#txtScanCycle').val ('0 min');
-  activateSaveRestoreData();
-}
-
-// -----------------------------------------------------------------------------
-function askDeleteDevice () {
-  // Check MAC
-  if (mac == '') {
-    return;
-  }
-
-  // Ask delete device
-  showModalWarning ('Delete Device', 'Are you sure you want to delete this device?<br>(maybe you prefer to archive it)',
-    'Cancel', 'Delete', 'deleteDevice');
-}
-
-
-// -----------------------------------------------------------------------------
-function deleteDevice () {
-  // Check MAC
-  if (mac == '') {
-    return;
-  }
-
-  // Delete device
-  $.get('php/server/devices.php?action=deleteDevice&mac='+ mac, function(msg) {
+  // Delete device events
+  $.get('php/server/devices.php?action=deleteDeviceEvents&mac='+ mac, function(msg) {
     showMessage (msg);
   });
-
   // Deactivate controls
   $('#panDetails :input').attr('disabled', true);
 }
 
+// -----------------------------------------------------------------------------
+function askDeleteDevice () {
+  if (mac == '') {
+    return;
+  }
+  // Ask delete device
+  showModalWarning ('<?=$pia_lang['DevDetail_button_Delete'];?>', '<?=$pia_lang['DevDetail_button_Delete_Warning'];?>',
+    '<?=$pia_lang['Gen_Cancel'];?>', '<?=$pia_lang['Gen_Delete'];?>', 'deleteDevice');
+}
+
+// -----------------------------------------------------------------------------
+function deleteDevice () {
+  if (mac == '') {
+    return;
+  }
+  // Delete device
+  $.get('php/server/devices.php?action=deleteDevice&mac='+ mac, function(msg) {
+    showMessage (msg);
+  });
+  // Deactivate controls
+  $('#panDetails :input').attr('disabled', true);
+}
 
 // -----------------------------------------------------------------------------
 function getSessionsPresenceEvents () {
+  // Check MAC in url
+  var urlParams = new URLSearchParams(window.location.search);
+  mac = urlParams.get ('mac');
   // Define Sessions datasource and query dada
   $('#tableSessions').DataTable().ajax.url('php/server/events.php?action=getDeviceSessions&mac=' + mac +'&period='+ period).load();
-  
+
   // Define Presence datasource and query data
   $('#calendar').fullCalendar('removeEventSources');
   $('#calendar').fullCalendar('addEventSource',
-    { url: 'php/server/events.php?action=getDevicePresence&mac=' + mac +'&period='+ period });
+  { url: 'php/server/events.php?action=getDevicePresence&mac=' + mac});
 
   // Query events
   getDeviceEvents();
 }
-
 
 // -----------------------------------------------------------------------------
 function getDeviceEvents () {
@@ -1282,7 +1678,6 @@ function getDeviceEvents () {
   $('#tableEvents').DataTable().ajax.url(
     'php/server/events.php?action=getDeviceEvents&mac=' + mac +'&period='+ period +'&hideConnections='+ hideConnections).load();
 }
-
 
 // -----------------------------------------------------------------------------
 // Activate save & restore on any value change
@@ -1294,19 +1689,16 @@ $(document).on('input', 'textarea', function() {
   activateSaveRestoreData();
 });
 
-
 // -----------------------------------------------------------------------------
 function activateSaveRestoreData () {
   $('#btnRestore').removeAttr ('disabled');
   $('#btnSave').removeAttr ('disabled');
 }
 
-
 function deactivateSaveRestoreData () {
   //$('#btnRestore').attr ('disabled','');
   $('#btnSave').attr ('disabled','');
 }
-
 
 // -----------------------------------------------------------------------------
 function setTextValue (textElement, textValue) {
@@ -1314,4 +1706,41 @@ function setTextValue (textElement, textValue) {
   activateSaveRestoreData ();
 }
 
+// WakeOnLAN
+function askwakeonlan() {
+  // Ask
+  showModalWarning('<?=$pia_lang['DevDetail_Tools_WOL_noti'];?>', '<?=$pia_lang['DevDetail_Tools_WOL_noti_text'];?>',
+    '<?=$pia_lang['Gen_Cancel'];?>', '<?=$pia_lang['Gen_Run'];?>', 'wakeonlan');
+}
+function wakeonlan() {
+  // Execute
+  $.get('php/server/devices.php?action=wakeonlan&'
+    + '&mac='         + $('#txtMAC').val()
+    + '&ip='          + $('#txtLastIP').val()
+    , function(msg) {
+    showMessage (msg);
+  });
+}
+
+function showmanualnmapscan(targetip) {
+  $( "#scanoutput" ).empty();
+  $.ajax({
+    method: "POST",
+    url: "./php/server/nmap_scan.php",
+    timeout: 60000,
+    data: { scan: targetip, mode: "view" },
+    success: function(data, textStatus) {
+        $("#scanoutput").html(data);
+    }
+  })
+}
+function initToolsSection () {
+setTimeout(function(){
+   document.getElementById('manualnmap_fast').innerHTML='<?=$pia_lang['DevDetail_Tools_nmap_buttonFast'];?> (' + document.getElementById('txtLastIP').value +')';
+   document.getElementById('manualnmap_normal').innerHTML='<?=$pia_lang['DevDetail_Tools_nmap_buttonDefault'];?> (' + document.getElementById('txtLastIP').value +')';
+   document.getElementById('manualnmap_detail').innerHTML='<?=$pia_lang['DevDetail_Tools_nmap_buttonDetail'];?> (' + document.getElementById('txtLastIP').value +')';
+   document.getElementById('btnwakeonlan').innerHTML='<?=$pia_lang['DevDetail_Tools_WOL'];?> ' + document.getElementById('txtLastIP').value + '';
+   showmanualnmapscan(document.getElementById('txtLastIP').value);
+}, 1000);
+}
 </script>

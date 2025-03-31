@@ -21,7 +21,8 @@ function setCookie (cookie, value, expirationHours='') {
   }
 
   // Save Cookie
-  document.cookie = cookie + "=" + value + expires;
+//  document.cookie = cookie + "=" + value + expires;
+  document.cookie = cookie + "=" + value + expires + "; SameSite=Strict; path=/";
 }
 
 // -----------------------------------------------------------------------------
@@ -187,7 +188,7 @@ function stopTimerRefreshData () {
 function newTimerRefreshData (refeshFunction) {
   timerRefreshData = setTimeout (function() {
     refeshFunction();
-  }, 5000);
+  }, 60000);
 }
 
 
@@ -196,4 +197,58 @@ function debugTimer () {
   $('#pageTitle').html (new Date().getSeconds());
 }
 
+// -----------------------------------------------------------------------------
 
+function initCPUtemp() {
+  function setCPUtemp(unit) {
+    if (localStorage) {
+      localStorage.setItem("tempunit", tempunit);
+    }
+
+    var temperature = parseFloat($("#rawtemp").text());
+    var displaytemp = $("#tempdisplay");
+    if (!isNaN(temperature)) {
+      switch (unit) {
+        case "K":
+          temperature += 273.15;
+          displaytemp.html(temperature.toFixed(1) + "&nbsp;K");
+          break;
+
+        case "F":
+          temperature = (temperature * 9) / 5 + 32;
+          displaytemp.html(temperature.toFixed(1) + "&nbsp;&deg;F");
+          break;
+
+        default:
+          displaytemp.html(temperature.toFixed(1) + "&nbsp;&deg;C");
+          break;
+      }
+    }
+  }
+
+  // Read from local storage, initialize if needed
+  var tempunit = localStorage ? localStorage.getItem("tempunit") : null;
+  if (tempunit === null) {
+    tempunit = "C";
+  }
+
+  setCPUtemp(tempunit);
+
+  // Add handler when on settings page
+  var tempunitSelector = $("#tempunit-selector");
+  if (tempunitSelector !== null) {
+    tempunitSelector.val(tempunit);
+    tempunitSelector.change(function () {
+      tempunit = $(this).val();
+      setCPUtemp(tempunit);
+    });
+  }
+}
+
+if (window.matchMedia("(max-width: 767px)").matches) {
+   $("#sidebar_systeminfobox").addClass("collapse");
+}
+
+function setDefaultPageTitle() {
+  document.title += " (0)";
+}
